@@ -311,6 +311,16 @@ const TradeDrawer: React.FC = () => {
     return addr;
   };
 
+  /** Connect (and switch network) and stop there. Placing an order is always a separate, explicit click. */
+  const connectOnly = async () => {
+    try {
+      await ensureWallet();
+      setStep('idle');
+    } catch (err) {
+      setStep('failed', isUserRejection(err) ? 'Cancelled in wallet' : (err as Error)?.message || 'Could not connect');
+    }
+  };
+
   const snapshotOrderIds = async (funder: string): Promise<Set<string> | null> => {
     try {
       const res = await getOrders(funder);
@@ -543,7 +553,7 @@ const TradeDrawer: React.FC = () => {
             ) : (
               <>
                 <span className="flash-wallet__none">No wallet connected</span>
-                <button className="flash-connect" onClick={() => place()} disabled={busy}>
+                <button className="flash-connect" onClick={connectOnly} disabled={busy}>
                   Connect
                 </button>
               </>
@@ -788,7 +798,11 @@ const TradeDrawer: React.FC = () => {
                 <button
                   className="flash-primary"
                   disabled={busy || !canPlace}
-                  onClick={() => (step === 'failed' ? (reset(), place()) : place())}>
+                  onClick={() => {
+                    if (!address || wrongNetwork) return connectOnly();
+                    if (step === 'failed') reset();
+                    return place();
+                  }}>
                   {busy && <Spinner />}
                   {primaryLabel}
                 </button>
