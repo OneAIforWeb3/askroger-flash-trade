@@ -59,6 +59,17 @@ UPDATE users.flash_orders
  WHERE order_id = %s AND tg_id = %s
 """
 
+# Status sync from the list endpoint: Flash's list carries no fills, so only the
+# status moves here; fill_tx stays whatever the single-order sync last wrote.
+# Scoped to the caller's own rows so a wallet shared across accounts cannot
+# rewrite someone else's bookkeeping.
+UPDATE_ORDER_STATUS_FROM_LIST_QUERY = """
+UPDATE users.flash_orders
+   SET status = %s,
+       filled_notional_usd = COALESCE(%s, filled_notional_usd)
+ WHERE order_id = %s AND tg_id = %s AND status <> %s
+"""
+
 TOKEN_ORDERS_SUMMARY_QUERY = """
 SELECT order_type, side, funder_address, status, placed_at
   FROM users.flash_orders

@@ -9,7 +9,8 @@ from app.api.trade import trade_bp
 from app.api.trade.constants import (
     ALLOWED_ORDER_TYPES, ALLOWED_SIDES, CHAIN_ALIASES, FLASH_CHAINS, INSERT_ORDER_QUERY,
     ORDER_PASSTHROUGH, ORDER_STATUSES_TERMINAL, QUOTE_ONLY_FIELDS, QUOTE_PASSTHROUGH,
-    TOKEN_ORDERS_COUNT_QUERY, TOKEN_ORDERS_SUMMARY_QUERY, UPDATE_ORDER_STATUS_QUERY,
+    TOKEN_ORDERS_COUNT_QUERY, TOKEN_ORDERS_SUMMARY_QUERY, UPDATE_ORDER_STATUS_FROM_LIST_QUERY,
+    UPDATE_ORDER_STATUS_QUERY,
 )
 from app.api.trade.flash_client import flash_request, integrator_fee_bps, is_configured
 
@@ -136,7 +137,44 @@ def list_orders():
         if request.args.get(key):
             params[key] = request.args[key]
     result, status, headers = flash_request("GET", "/orders", params=params)
+    if status == 200 and isinstance(result, dict):
+        _sync_rows_from_list(result.get("orders") or [])
     return _respond(result, status, headers)
+
+
+def _sync_rows_from_list(orders):
+    """A resting order that fills hours later would otherwise stay 'pending' in our
+    table until that single order is fetched again. The list already carries the
+    current status of every order for the wallet, so fold it in here at no extra
+    Flash call. Best effort: a DB hiccup never fails the user's list."""
+    db = current_app.config["WRITE_DB"]
+    for order in orders:
+        order_id, new_status = order.get("orderId"), order.get("status")
+        if not order_id or not new_status:
+            continue
+        filled = order.get("filled") or {}
+        notional = None
+        if new_status in ORDER_STATUSES_TERMINAL or filled.get("contraAmount"):
+            notional = _filled_notional(order, filled)
+        try:
+            db.execute_query(
+                query=UPDATE_ORDER_STATUS_FROM_LIST_QUERY,
+                values=(new_status, notional, order_id, str(g.tg_id), new_status))
+        except Exception as exc:
+            current_app.logger.error(f"flash_orders list sync failed for {order_id}: {exc}")
+
+
+def _filled_notional(order, filled):
+    """USD value of the filled part. For a USDC-contra buy the contra amount is the
+    notional itself; otherwise fall back to average notional price x target amount."""
+    try:
+        if order.get("side") == "buy" and filled.get("contraAmount"):
+            return str(Decimal(str(filled["contraAmount"])))
+        if filled.get("averageNotionalPrice") and filled.get("targetAmount"):
+            return str(Decimal(str(filled["averageNotionalPrice"])) * Decimal(str(filled["targetAmount"])))
+    except InvalidOperation:
+        pass
+    return None
 
 
 @trade_bp.route("/orders/<order_id>", methods=["GET"])
