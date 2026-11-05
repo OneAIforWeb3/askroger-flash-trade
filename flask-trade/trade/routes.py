@@ -8,7 +8,7 @@ from app.api.custom_decorators import require_login
 from app.api.trade import trade_bp
 from app.api.trade.constants import (
     ALLOWED_ORDER_TYPES, ALLOWED_SIDES, CHAIN_ALIASES, FLASH_CHAINS, INSERT_ORDER_QUERY,
-    ORDER_PASSTHROUGH, ORDER_STATUSES_TERMINAL, QUOTE_ONLY_FIELDS, QUOTE_PASSTHROUGH,
+    MY_ORDERS_QUERY, ORDER_PASSTHROUGH, ORDER_STATUSES_TERMINAL, QUOTE_ONLY_FIELDS, QUOTE_PASSTHROUGH,
     TOKEN_ORDERS_COUNT_QUERY, TOKEN_ORDERS_SUMMARY_QUERY, UPDATE_ORDER_STATUS_FROM_LIST_QUERY,
     UPDATE_ORDER_STATUS_QUERY,
 )
@@ -184,6 +184,43 @@ def _filled_notional(order, filled):
     except InvalidOperation:
         pass
     return None
+
+
+MY_ORDERS_COLUMNS = (
+    "orderId", "chain", "tokenId", "pairId", "tokenSymbol", "orderType", "side", "qty",
+    "contraAsset", "quoteNotionalUsd", "filledNotionalUsd", "integratorFeeBps",
+    "limitNotionalPrice", "status", "fillTx", "placedAt", "updatedAt", "funderAddress",
+)
+
+
+@trade_bp.route("/mine", methods=["GET"])
+@require_login(always_enforce=True)
+def my_orders():
+    """Every Flash order this login has placed through askRoger, across tokens and
+    wallets. Open orders are refreshed from Flash first (one list call per funder
+    wallet that still has a non-terminal row, capped so a hostile account cannot
+    turn this into a Flash rate-limit burner)."""
+    db = current_app.config["READ_DB"]
+    rows = db.fetchall(query=MY_ORDERS_QUERY, values=(str(g.tg_id),))
+    open_funders = []
+    for r in rows:
+        if r[13] not in ORDER_STATUSES_TERMINAL and r[17] and r[17] not in open_funders:
+            open_funders.append(r[17])
+    for funder in open_funders[:3]:
+        result, status, _ = flash_request("GET", "/orders", params={"funderAddress": funder, "pageSize": 50})
+        if status == 200 and isinstance(result, dict):
+            _sync_rows_from_list(result.get("orders") or [])
+    if open_funders:
+        rows = db.fetchall(query=MY_ORDERS_QUERY, values=(str(g.tg_id),))
+    orders = []
+    for r in rows:
+        item = dict(zip(MY_ORDERS_COLUMNS, r))
+        for k in ("qty", "quoteNotionalUsd", "filledNotionalUsd", "limitNotionalPrice"):
+            item[k] = None if item[k] is None else str(item[k])
+        for k in ("placedAt", "updatedAt"):
+            item[k] = item[k].isoformat() if hasattr(item[k], "isoformat") else item[k]
+        orders.append(item)
+    return jsonify({"orders": orders})
 
 
 @trade_bp.route("/orders/<order_id>", methods=["GET"])

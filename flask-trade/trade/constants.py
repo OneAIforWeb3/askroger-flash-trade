@@ -70,6 +70,16 @@ UPDATE users.flash_orders
  WHERE order_id = %s AND tg_id = %s AND status <> %s
 """
 
+MY_ORDERS_QUERY = """
+SELECT order_id, chain, token_id, pair_id, token_symbol, order_type, side, qty,
+       contra_asset, quote_notional_usd, filled_notional_usd, integrator_fee_bps,
+       limit_notional_price, status, fill_tx, placed_at, updated_at, funder_address
+  FROM users.flash_orders
+ WHERE tg_id = %s
+ ORDER BY placed_at DESC
+ LIMIT 200
+"""
+
 TOKEN_ORDERS_SUMMARY_QUERY = """
 SELECT order_type, side, funder_address, status, placed_at
   FROM users.flash_orders
