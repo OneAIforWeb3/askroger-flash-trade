@@ -578,6 +578,25 @@ $yellow: var(--yellow-text-color-new); // #f5cd47
     flex-shrink: 0;
   }
 
+  .flash-placed {
+    border: 1px solid $border;
+    border-radius: 12px;
+    background: $card-bg;
+    padding: 10px 12px;
+    &__title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: capitalize;
+      color: $fg;
+    }
+    &__sub {
+      margin-top: 3px;
+      font-size: 11px;
+      color: $muted;
+      line-height: 1.4;
+    }
+  }
+
   // ---- steps ------------------------------------------------------------
   .flash-steps {
     display: flex;

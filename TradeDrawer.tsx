@@ -534,6 +534,11 @@ const TradeDrawer: React.FC = () => {
   const feePaid = fills.reduce((s, f) => s + Number(f.feeNotional || 0), 0);
   const stepIndex = STEP_ORDER.findIndex(s => s.key === step);
   const showSteps = stepIndex >= 0 || step === 'filled';
+  // Once an order is placed the form is done: inputs hide behind a summary until "New order".
+  const orderActive = step === 'placed' || step === 'filled' || (step === 'failed' && !!orderId);
+  const placedType = (order?.orderType || orderType) as string;
+  const placedQty = order?.qty || amount;
+  const placedLimit = order?.limitNotionalPrice || (orderType === 'limit' ? limitPrice : null);
   const spot = impliedPrice(preview);
   const canPlace =
     !!usdc && (!address || wrongNetwork || (!insufficient && (step === 'failed' || (!!preview && !previewError))));
@@ -605,209 +610,226 @@ const TradeDrawer: React.FC = () => {
 
           {tab === 'trade' && (
             <>
-              <div className="flash-seg">
-                <button
-                  className={orderType === 'market' ? 'active' : ''}
-                  disabled={busy}
-                  onClick={() => setOrderType('market')}>
-                  Market
-                </button>
-                <button
-                  className={orderType === 'limit' ? 'active' : ''}
-                  disabled={busy}
-                  onClick={() => setOrderType('limit')}>
-                  Limit
-                </button>
-              </div>
-
-              <div className="flash-field">
-                <div className="flash-field__row">
-                  <span>You pay</span>
-                  {usdcBalance !== null && (
-                    <span className="flash-balance">
-                      Balance {fmt(usdcBalance, 4)} USDC
-                      <button
-                        disabled={busy}
-                        onClick={() => setAmount((Math.floor(Number(usdcBalance) * 100) / 100).toString())}>
-                        Max
-                      </button>
-                    </span>
-                  )}
-                </div>
-                <div className={`flash-input ${insufficient ? 'invalid' : ''}`}>
-                  <input
-                    inputMode="decimal"
-                    value={amount}
-                    disabled={busy}
-                    onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-                    placeholder="0"
-                  />
-                  <span className="flash-unit">
-                    <img src={USDC_ICON} alt="" />
-                    USDC
-                  </span>
-                </div>
-                <div className="flash-quick">
-                  {QUICK_AMOUNTS.map(a => (
-                    <button
-                      key={a}
-                      className={`${amount === a ? 'active' : ''} ${usdcBalance !== null && Number(a) > Number(usdcBalance) ? 'over' : ''}`}
-                      disabled={busy}
-                      onClick={() => setAmount(a)}>
-                      ${a}
-                    </button>
-                  ))}
-                </div>
-                {insufficient && (
-                  <div className="flash-field__hint bad">
-                    You have {fmt(usdcBalance, 4)} USDC on {chainLabel}. Lower the amount or top up.
-                  </div>
-                )}
-              </div>
-
-              {orderType === 'limit' && (
+              {!orderActive && (
                 <>
+                  <div className="flash-seg">
+                    <button
+                      className={orderType === 'market' ? 'active' : ''}
+                      disabled={busy}
+                      onClick={() => setOrderType('market')}>
+                      Market
+                    </button>
+                    <button
+                      className={orderType === 'limit' ? 'active' : ''}
+                      disabled={busy}
+                      onClick={() => setOrderType('limit')}>
+                      Limit
+                    </button>
+                  </div>
+
                   <div className="flash-field">
                     <div className="flash-field__row">
-                      <span className="flash-limit-label">
-                        When 1 {symbol} is worth
-                        {spot && limitPrice && Number(limitPrice) > 0 && (
-                          <span
-                            className={`pill pct ${Number(limitPrice) / spot - 1 < -0.0005 ? 'ok' : Number(limitPrice) / spot - 1 > 0.0005 ? 'wait' : ''}`}>
-                            {((Number(limitPrice) / spot - 1) * 100).toFixed(1)}%
-                          </span>
-                        )}
-                      </span>
-                      {spot && (
-                        <button
-                          className="flash-reset"
-                          disabled={busy}
-                          onClick={() => {
-                            limitTouched.current = true;
-                            setCustomPct('');
-                            setLimitPrice(priceAtPct(spot, 0));
-                          }}>
-                          Reset
-                        </button>
+                      <span>You pay</span>
+                      {usdcBalance !== null && (
+                        <span className="flash-balance">
+                          Balance {fmt(usdcBalance, 4)} USDC
+                          <button
+                            disabled={busy}
+                            onClick={() => setAmount((Math.floor(Number(usdcBalance) * 100) / 100).toString())}>
+                            Max
+                          </button>
+                        </span>
                       )}
                     </div>
-                    <div className="flash-input">
+                    <div className={`flash-input ${insufficient ? 'invalid' : ''}`}>
                       <input
                         inputMode="decimal"
-                        value={limitPrice}
+                        value={amount}
                         disabled={busy}
-                        onChange={e => {
-                          limitTouched.current = true;
-                          setCustomPct('');
-                          setLimitPrice(e.target.value.replace(/[^0-9.eE-]/g, ''));
-                        }}
-                        placeholder="auto from quote"
+                        onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+                        placeholder="0"
                       />
-                      <span className="flash-unit">USD</span>
+                      <span className="flash-unit">
+                        <img src={USDC_ICON} alt="" />
+                        USDC
+                      </span>
                     </div>
                     <div className="flash-quick">
-                      {LIMIT_PRESETS.map(pr => {
-                        const active =
-                          !!spot &&
-                          !!limitPrice &&
-                          Math.abs((Number(limitPrice) / spot - 1) * 100 - pr.pct) < 0.05 &&
-                          !customPct;
-                        return (
-                          <button
-                            key={pr.label}
-                            className={active ? 'active' : ''}
-                            disabled={busy || !spot}
-                            onClick={() => {
-                              if (!spot) return;
+                      {QUICK_AMOUNTS.map(a => (
+                        <button
+                          key={a}
+                          className={`${amount === a ? 'active' : ''} ${usdcBalance !== null && Number(a) > Number(usdcBalance) ? 'over' : ''}`}
+                          disabled={busy}
+                          onClick={() => setAmount(a)}>
+                          ${a}
+                        </button>
+                      ))}
+                    </div>
+                    {insufficient && (
+                      <div className="flash-field__hint bad">
+                        You have {fmt(usdcBalance, 4)} USDC on {chainLabel}. Lower the amount or top up.
+                      </div>
+                    )}
+                  </div>
+
+                  {orderType === 'limit' && (
+                    <>
+                      <div className="flash-field">
+                        <div className="flash-field__row">
+                          <span className="flash-limit-label">
+                            When 1 {symbol} is worth
+                            {spot && limitPrice && Number(limitPrice) > 0 && (
+                              <span
+                                className={`pill pct ${Number(limitPrice) / spot - 1 < -0.0005 ? 'ok' : Number(limitPrice) / spot - 1 > 0.0005 ? 'wait' : ''}`}>
+                                {((Number(limitPrice) / spot - 1) * 100).toFixed(1)}%
+                              </span>
+                            )}
+                          </span>
+                          {spot && (
+                            <button
+                              className="flash-reset"
+                              disabled={busy}
+                              onClick={() => {
+                                limitTouched.current = true;
+                                setCustomPct('');
+                                setLimitPrice(priceAtPct(spot, 0));
+                              }}>
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                        <div className="flash-input">
+                          <input
+                            inputMode="decimal"
+                            value={limitPrice}
+                            disabled={busy}
+                            onChange={e => {
                               limitTouched.current = true;
                               setCustomPct('');
-                              setLimitPrice(priceAtPct(spot, pr.pct));
-                            }}>
-                            {pr.label}
-                          </button>
-                        );
-                      })}
-                      <label className={`flash-custom-pct ${customPct ? 'active' : ''}`}>
-                        <span aria-hidden="true">✎</span>
-                        <input
-                          inputMode="decimal"
-                          value={customPct}
-                          disabled={busy || !spot}
-                          placeholder="0"
-                          onChange={e => {
-                            const v = e.target.value.replace(/[^0-9.-]/g, '');
-                            setCustomPct(v);
-                            const pct = Number(v);
-                            if (spot && v !== '' && v !== '-' && Number.isFinite(pct)) {
-                              limitTouched.current = true;
-                              setLimitPrice(priceAtPct(spot, pct));
-                            }
-                          }}
-                        />
-                        %
-                      </label>
+                              setLimitPrice(e.target.value.replace(/[^0-9.eE-]/g, ''));
+                            }}
+                            placeholder="auto from quote"
+                          />
+                          <span className="flash-unit">USD</span>
+                        </div>
+                        <div className="flash-quick">
+                          {LIMIT_PRESETS.map(pr => {
+                            const active =
+                              !!spot &&
+                              !!limitPrice &&
+                              Math.abs((Number(limitPrice) / spot - 1) * 100 - pr.pct) < 0.05 &&
+                              !customPct;
+                            return (
+                              <button
+                                key={pr.label}
+                                className={active ? 'active' : ''}
+                                disabled={busy || !spot}
+                                onClick={() => {
+                                  if (!spot) return;
+                                  limitTouched.current = true;
+                                  setCustomPct('');
+                                  setLimitPrice(priceAtPct(spot, pr.pct));
+                                }}>
+                                {pr.label}
+                              </button>
+                            );
+                          })}
+                          <label className={`flash-custom-pct ${customPct ? 'active' : ''}`}>
+                            <span aria-hidden="true">✎</span>
+                            <input
+                              inputMode="decimal"
+                              value={customPct}
+                              disabled={busy || !spot}
+                              placeholder="0"
+                              onChange={e => {
+                                const v = e.target.value.replace(/[^0-9.-]/g, '');
+                                setCustomPct(v);
+                                const pct = Number(v);
+                                if (spot && v !== '' && v !== '-' && Number.isFinite(pct)) {
+                                  limitTouched.current = true;
+                                  setLimitPrice(priceAtPct(spot, pct));
+                                }
+                              }}
+                            />
+                            %
+                          </label>
+                        </div>
+                      </div>
+                      <div className="flash-field__row flash-expires">
+                        <span>Expires in</span>
+                        <select value={expiry} disabled={busy} onChange={e => setExpiry(e.target.value as ExpiryKey)}>
+                          {EXPIRY_OPTIONS.map(o => (
+                            <option key={o.key} value={o.key}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="flash-summary">
+                    <div className="row big">
+                      <span>You receive</span>
+                      <span>
+                        {previewLoading && !preview ? '…' : fmt(preview?.to?.amount)} {symbol}
+                      </span>
                     </div>
-                  </div>
-                  <div className="flash-field__row flash-expires">
-                    <span>Expires in</span>
-                    <select value={expiry} disabled={busy} onChange={e => setExpiry(e.target.value as ExpiryKey)}>
-                      {EXPIRY_OPTIONS.map(o => (
-                        <option key={o.key} value={o.key}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="row">
+                      <span>{orderType === 'limit' ? 'Spot price' : 'Price'}</span>
+                      <span>{spot ? `$${fmt(spot)}` : '–'}</span>
+                    </div>
+                    <div className="row">
+                      <span>Price impact</span>
+                      <span>
+                        {preview?.estimatedPriceImpact
+                          ? `${(Number(preview.estimatedPriceImpact) * 100).toFixed(2)}%`
+                          : '–'}
+                      </span>
+                    </div>
+                    <div className="row">
+                      <span>
+                        Fees · Flash + askRoger{' '}
+                        {preview?.integratorFeeBps && preview.integratorFeeBps !== '0'
+                          ? `${Number(preview.integratorFeeBps) / 100}%`
+                          : ''}
+                      </span>
+                      <span>
+                        {preview?.fees?.estimatedFeeNotional ? `$${fmt(preview.fees.estimatedFeeNotional, 4)}` : '–'}
+                      </span>
+                    </div>
+                    {previewError ? (
+                      <div className="flash-error">{previewError}</div>
+                    ) : (
+                      <div className="muted">
+                        {orderType === 'limit'
+                          ? 'Rests with Flash until your price is reached. Gasless execution, cancel any time.'
+                          : 'Executes at the best route Flash finds. Flash pays the execution gas.'}
+                        {quotedAt && preview && (
+                          <span className="flash-updated">
+                            {previewLoading
+                              ? ' · updating…'
+                              : ` · updated ${Math.max(0, Math.round((now - quotedAt) / 1000))}s ago`}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
 
-              <div className="flash-summary">
-                <div className="row big">
-                  <span>You receive</span>
-                  <span>
-                    {previewLoading && !preview ? '…' : fmt(preview?.to?.amount)} {symbol}
-                  </span>
-                </div>
-                <div className="row">
-                  <span>{orderType === 'limit' ? 'Spot price' : 'Price'}</span>
-                  <span>{spot ? `$${fmt(spot)}` : '–'}</span>
-                </div>
-                <div className="row">
-                  <span>Price impact</span>
-                  <span>
-                    {preview?.estimatedPriceImpact
-                      ? `${(Number(preview.estimatedPriceImpact) * 100).toFixed(2)}%`
-                      : '–'}
-                  </span>
-                </div>
-                <div className="row">
-                  <span>
-                    Fees · Flash + askRoger{' '}
-                    {preview?.integratorFeeBps && preview.integratorFeeBps !== '0'
-                      ? `${Number(preview.integratorFeeBps) / 100}%`
-                      : ''}
-                  </span>
-                  <span>
-                    {preview?.fees?.estimatedFeeNotional ? `$${fmt(preview.fees.estimatedFeeNotional, 4)}` : '–'}
-                  </span>
-                </div>
-                {previewError ? (
-                  <div className="flash-error">{previewError}</div>
-                ) : (
-                  <div className="muted">
-                    {orderType === 'limit'
-                      ? 'Rests with Flash until your price is reached. Gasless execution, cancel any time.'
-                      : 'Executes at the best route Flash finds. Flash pays the execution gas.'}
-                    {quotedAt && preview && (
-                      <span className="flash-updated">
-                        {previewLoading
-                          ? ' · updating…'
-                          : ` · updated ${Math.max(0, Math.round((now - quotedAt) / 1000))}s ago`}
-                      </span>
-                    )}
+              {orderActive && (
+                <div className="flash-placed">
+                  <div className="flash-placed__title">
+                    {placedType} buy · {fmt(placedQty, 4)} USDC{placedLimit ? ` · limit $${fmt(placedLimit)}` : ''}
                   </div>
-                )}
-              </div>
+                  <div className="flash-placed__sub">
+                    {placedType === 'limit'
+                      ? 'Resting with Flash until your price is reached. Cancel any time from the Orders tab.'
+                      : 'Executing at the best route Flash finds.'}
+                  </div>
+                </div>
+              )}
 
               {showSteps && (
                 <div className="flash-steps">
