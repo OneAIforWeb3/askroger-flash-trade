@@ -380,6 +380,10 @@ $yellow: var(--yellow-text-color-new); // #f5cd47
       color: $faint;
       font-size: 11px;
       line-height: 1.4;
+      .flash-updated {
+        color: $muted;
+        white-space: nowrap;
+      }
     }
   }
 

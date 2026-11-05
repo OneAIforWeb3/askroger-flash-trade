@@ -35,7 +35,9 @@ import {
 /** Flash accepts quotes without a real funder; used for the live preview before a wallet is connected. */
 const PREVIEW_FUNDER = '0x000000000000000000000000000000000000dEaD';
 const QUICK_AMOUNTS = ['2', '5', '10', '25'];
-const USDC_ICON = 'https://dd.dexscreener.com/ds-data/tokens/base/0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.png';
+const USDC_ICON = 'https://assets.coingecko.com/coins/images/6319/small/usdc.png';
+// Preview quotes refresh on this cadence while the drawer is idle (well under Flash's 5 req/s).
+const PREVIEW_REFRESH_MS = 15_000;
 
 const fmt = (v?: string | number | null, digits = 6): string => {
   if (v === null || v === undefined || v === '') return '–';
@@ -112,6 +114,9 @@ const TradeDrawer: React.FC = () => {
   const [pollTimedOut, setPollTimedOut] = useState(false);
   const [usdcBalance, setUsdcBalance] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [quotedAt, setQuotedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
   const limitTouched = useRef(false);
   const submitFailed = useRef(false);
 
@@ -210,6 +215,7 @@ const TradeDrawer: React.FC = () => {
         const q = await postQuote(req);
         if (cancelled) return;
         setPreview(q);
+        setQuotedAt(Date.now());
         setPreviewError(null);
         if (orderType === 'limit' && !limitTouched.current && !price) {
           const p = impliedPrice(q);
@@ -228,7 +234,19 @@ const TradeDrawer: React.FC = () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [isOpen, chain, usdc, amount, orderType, limitPrice, address, baseRequest]);
+  }, [isOpen, chain, usdc, amount, orderType, limitPrice, address, baseRequest, refreshTick]);
+
+  // Keep the preview fresh while the user is just looking: re-quote every 15 s when
+  // nothing is in progress and no order is placed. Also drive the "updated Ns ago" label.
+  useEffect(() => {
+    if (!isOpen || tab !== 'trade' || busy || step === 'placed' || step === 'filled') return;
+    const quote = setInterval(() => setRefreshTick(n => n + 1), PREVIEW_REFRESH_MS);
+    const clock = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      clearInterval(quote);
+      clearInterval(clock);
+    };
+  }, [isOpen, tab, busy, step]);
 
   // Poll the placed order until it reaches a terminal status (3 min cap for resting orders).
   useEffect(() => {
@@ -695,6 +713,13 @@ const TradeDrawer: React.FC = () => {
                     {orderType === 'limit'
                       ? 'Rests with Flash until your price is reached. Gasless execution, cancel any time.'
                       : 'Executes at the best route Flash finds. Flash pays the execution gas.'}
+                    {quotedAt && preview && (
+                      <span className="flash-updated">
+                        {previewLoading
+                          ? ' · updating…'
+                          : ` · updated ${Math.max(0, Math.round((now - quotedAt) / 1000))}s ago`}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
