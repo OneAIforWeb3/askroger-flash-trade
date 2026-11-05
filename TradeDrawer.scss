@@ -292,6 +292,13 @@ $yellow: var(--yellow-text-color-new); // #f5cd47
       &:focus-within {
         border-color: $blue-text;
       }
+      &.invalid,
+      &.invalid:focus-within {
+        border-color: rgba(248, 113, 104, 0.7);
+        input {
+          color: $red;
+        }
+      }
       input {
         flex: 1;
         min-width: 0;
@@ -342,6 +349,17 @@ $yellow: var(--yellow-text-color-new); // #f5cd47
           background: rgba(133, 184, 255, 0.16);
           color: $blue-text;
         }
+        &.over {
+          opacity: 0.45;
+          text-decoration: line-through;
+        }
+      }
+    }
+    .flash-field__hint {
+      font-size: 11px;
+      line-height: 1.4;
+      &.bad {
+        color: $red;
       }
     }
   }

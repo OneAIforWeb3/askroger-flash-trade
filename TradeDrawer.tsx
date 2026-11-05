@@ -147,6 +147,7 @@ const TradeDrawer: React.FC = () => {
   const busy = ['connecting', 'switching', 'quoting', 'approving', 'signing', 'submitting'].includes(step);
   const symbol = token?.token_symbol || '';
   const change24 = Number(token?.pc_24_hr);
+  const insufficient = usdcBalance !== null && !wrongNetwork && Number(amount) > Number(usdcBalance);
 
   const baseRequest = useCallback(
     (funder: string, type: OrderType, price: string): QuoteRequest | null => {
@@ -502,6 +503,7 @@ const TradeDrawer: React.FC = () => {
   const primaryLabel = useMemo(() => {
     if (!address) return 'Connect wallet';
     if (wrongNetwork) return `Switch to ${chainLabel}`;
+    if (insufficient && !busy && step !== 'placed' && step !== 'filled') return 'Insufficient USDC';
     switch (step) {
       case 'connecting':
         return 'Connecting…';
@@ -524,7 +526,7 @@ const TradeDrawer: React.FC = () => {
       default:
         return orderType === 'limit' ? 'Place limit order' : 'Place market order';
     }
-  }, [address, wrongNetwork, chainLabel, step, orderType, pollTimedOut]);
+  }, [address, wrongNetwork, chainLabel, step, orderType, pollTimedOut, insufficient, busy]);
 
   if (!isOpen || !token) return null;
 
@@ -533,7 +535,8 @@ const TradeDrawer: React.FC = () => {
   const stepIndex = STEP_ORDER.findIndex(s => s.key === step);
   const showSteps = stepIndex >= 0 || step === 'filled';
   const spot = impliedPrice(preview);
-  const canPlace = !!usdc && (!address || wrongNetwork || step === 'failed' || (!!preview && !previewError));
+  const canPlace =
+    !!usdc && (!address || wrongNetwork || (!insufficient && (step === 'failed' || (!!preview && !previewError))));
   const shareMine = `I just traded $${symbol} on askRoger with @DefinitiveFi Flash. Trade the signal:`;
   const shareUrl = `https://x.com/intent/post?text=${encodeURIComponent(shareMine)}&url=${encodeURIComponent(window.location.href)}`;
 
@@ -631,7 +634,7 @@ const TradeDrawer: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <div className="flash-input">
+                <div className={`flash-input ${insufficient ? 'invalid' : ''}`}>
                   <input
                     inputMode="decimal"
                     value={amount}
@@ -648,13 +651,18 @@ const TradeDrawer: React.FC = () => {
                   {QUICK_AMOUNTS.map(a => (
                     <button
                       key={a}
-                      className={amount === a ? 'active' : ''}
+                      className={`${amount === a ? 'active' : ''} ${usdcBalance !== null && Number(a) > Number(usdcBalance) ? 'over' : ''}`}
                       disabled={busy}
                       onClick={() => setAmount(a)}>
                       ${a}
                     </button>
                   ))}
                 </div>
+                {insufficient && (
+                  <div className="flash-field__hint bad">
+                    You have {fmt(usdcBalance, 4)} USDC on {chainLabel}. Lower the amount or top up.
+                  </div>
+                )}
               </div>
 
               {orderType === 'limit' && (
