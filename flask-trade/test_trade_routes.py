@@ -47,7 +47,7 @@ class FakeDB:
         self.executed.append((query.strip().split()[0], values))
 
     def fetchall(self, query, values=None):
-        key = "COUNT" if "COUNT(*)" in query else "ROWS"
+        key = "COUNT" if "COUNT(*)" in query else ("MINE" if "tg_id = %s" in query else "ROWS")
         return self.rows.get(key, [])
 
 
@@ -222,6 +222,34 @@ def test_list_sync_db_failure_does_not_break_response(client):
         raise RuntimeError("db down")
     app.config["WRITE_DB"].execute_query = boom
     assert c.get("/trade/orders?funderAddress=0xfunder").status_code == 200
+
+
+def test_my_orders_lists_rows_and_refreshes_open_ones(client):
+    c, app = client
+    import datetime
+    from decimal import Decimal
+    row = lambda oid, status, funder: (oid, "base", "0xtok", "0xpair", "UP", "limit", "buy", Decimal("2"), "0xusdc",
+                                       Decimal("2.0"), None, 50, Decimal("0.06"), status, None,
+                                       datetime.datetime(2026, 11, 5, 22, 1, 5), datetime.datetime(2026, 11, 5, 22, 1, 8), funder)
+    app.config["READ_DB"].rows = {"MINE": [row("o-open", "ORDER_STATUS_ACCEPTED", "0xfunder"),
+                                           row("o-done", "ORDER_STATUS_FILLED", "0xfunder")]}
+    resp = c.get("/trade/mine")
+    assert resp.status_code == 200
+    body = resp.get_json()["orders"]
+    assert [o["orderId"] for o in body] == ["o-open", "o-done"]
+    assert body[0]["qty"] == "2" and body[0]["placedAt"] == "2026-11-05T22:01:05"
+    assert body[0]["funderAddress"] == "0xfunder"
+    # one Flash list call for the one funder with an open row, and its rows synced
+    assert [p for _, p, _, _ in app.flash_calls] == ["/orders"]
+    assert app.flash_calls[0][3]["funderAddress"] == "0xfunder"
+    assert app.config["WRITE_DB"].executed  # statuses from the fake list were folded in
+
+
+def test_my_orders_no_flash_call_when_nothing_open(client):
+    c, app = client
+    app.config["READ_DB"].rows = {"MINE": []}
+    assert c.get("/trade/mine").get_json() == {"orders": []}
+    assert app.flash_calls == []
 
 
 def test_cancel_marks_row(client):
