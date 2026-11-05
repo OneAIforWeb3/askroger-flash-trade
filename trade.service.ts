@@ -28,6 +28,8 @@ export interface QuoteResponse {
   quoteId: string;
   orderType: OrderType;
   side: Side;
+  targetAsset?: string;
+  contraAsset?: string;
   from: QuoteLeg;
   to: QuoteLeg;
   fees?: { estimatedFeeNotional?: string };

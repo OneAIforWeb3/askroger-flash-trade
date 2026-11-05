@@ -82,12 +82,29 @@ export async function sendTransaction(tx: {
   }
 }
 
-/** Flash returns `orderTypedData` as a JSON string; MetaMask's v4 wants exactly that string. */
+/**
+ * Flash serializes `domain.chainId` as a string. Wallets compare it against the active
+ * chain and some libraries drop a string chainId from the domain hash (Definitive's own
+ * reference client coerces it), so hand the wallet a number. `types.EIP712Domain` is
+ * present in Flash's payload and eth_signTypedData_v4 requires it, so it is kept.
+ */
+export const normalizeTypedData = (typedDataJson: string): string => {
+  const td = JSON.parse(typedDataJson) as { domain?: { chainId?: string | number } };
+  if (td?.domain?.chainId !== undefined && td.domain.chainId !== null) {
+    td.domain.chainId = Number(td.domain.chainId);
+  }
+  return JSON.stringify(td);
+};
+
+/** Flash returns `orderTypedData` as a JSON string; eth_signTypedData_v4 takes that string. */
 export async function signTypedDataV4(address: string, typedDataJson: string): Promise<string> {
   const provider = getProvider();
   if (!provider) throw new WalletError('No browser wallet found');
   try {
-    return (await provider.request({ method: 'eth_signTypedData_v4', params: [address, typedDataJson] })) as string;
+    return (await provider.request({
+      method: 'eth_signTypedData_v4',
+      params: [address, normalizeTypedData(typedDataJson)],
+    })) as string;
   } catch (err) {
     throw rpcError(err, 'Order was not signed');
   }

@@ -93,6 +93,8 @@ const TradeDrawer: React.FC = () => {
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const limitTouched = useRef(false);
+  const submitFailed = useRef(false);
+  const [pollTimedOut, setPollTimedOut] = useState(false);
 
   const chain = normalizeChain(token?.chain);
   const wantedChainId = chain ? EVM_CHAIN_IDS[chain] : undefined;
@@ -128,6 +130,7 @@ const TradeDrawer: React.FC = () => {
     setPreview(null);
     setPreviewError(null);
     setTxHash(null);
+    setPollTimedOut(false);
     setLimitPrice('');
     limitTouched.current = false;
   }, [isOpen, token?.token_id]);
@@ -213,9 +216,20 @@ const TradeDrawer: React.FC = () => {
     };
     tick();
     const id = setInterval(tick, 3000);
+    // Resting limit orders can sit for hours; stop polling after 3 minutes and leave the
+    // order visible in the Orders tab.
+    const cap = setTimeout(
+      () => {
+        stopped = true;
+        clearInterval(id);
+        setPollTimedOut(true);
+      },
+      3 * 60 * 1000,
+    );
     return () => {
       stopped = true;
       clearInterval(id);
+      clearTimeout(cap);
     };
   }, [step, orderId, address, setOrderState, setStep]);
 
@@ -262,6 +276,7 @@ const TradeDrawer: React.FC = () => {
   };
 
   const place = async () => {
+    submitFailed.current = false;
     try {
       const funder = await ensureWallet();
       if (!chain || !usdc) throw new Error('This chain is not enabled for Flash trading');
@@ -292,8 +307,12 @@ const TradeDrawer: React.FC = () => {
       const signature = await signTypedDataV4(funder, q.evm.orderTypedData);
 
       setStep('submitting');
-      const res = await postOrder({
+      // Echo the trade fields as quoted (assets from the quote response, like Definitive's
+      // reference client); quote-only fields are stripped server-side.
+      const submitBody = {
         ...(baseRequest(funder, orderType, price) as QuoteRequest),
+        targetAsset: q.targetAsset || (token?.token_id as string),
+        contraAsset: q.contraAsset || usdc.address,
         quoteId: q.quoteId,
         userSignature: signature,
         evmOrderTypedData: q.evm.orderTypedData,
@@ -304,14 +323,65 @@ const TradeDrawer: React.FC = () => {
           token_symbol: token?.token_symbol,
           quote_notional_usd: q.from?.notional,
         },
-      });
-      setPlaced(res.orderId);
+      };
+      // Flash's /order has been seen to create (even fill) an order and still answer 4xx.
+      // Snapshot the wallet's orders first so an error can be reconciled instead of retried,
+      // which would double-spend.
+      const priorIds = await snapshotOrderIds(funder);
+      try {
+        const res = await postOrder(submitBody);
+        setPlaced(res.orderId);
+      } catch (submitErr) {
+        const recovered = await findCreatedOrder(funder, submitBody, priorIds);
+        if (recovered) {
+          setPlaced(recovered.orderId);
+          return;
+        }
+        submitFailed.current = true;
+        throw submitErr;
+      }
     } catch (err) {
       const msg = isUserRejection(err)
         ? 'Cancelled in wallet'
         : describeApiError(err, (err as Error)?.message || 'Order failed');
-      setStep('failed', msg);
+      setStep('failed', submitFailed.current ? `${msg}. Check the Orders tab before placing again.` : msg);
     }
+  };
+
+  const snapshotOrderIds = async (funder: string): Promise<Set<string> | null> => {
+    try {
+      const res = await getOrders(funder);
+      return new Set((res.orders || []).map(o => o.orderId));
+    } catch {
+      return null;
+    }
+  };
+
+  const findCreatedOrder = async (
+    funder: string,
+    submitted: { side: string; qty: string; orderType: string; targetAsset: string; contraAsset: string },
+    priorIds: Set<string> | null,
+  ): Promise<FlashOrder | undefined> => {
+    const same = (a?: string, b?: string) => (a || '').toLowerCase() === (b || '').toLowerCase();
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        const res = await getOrders(funder);
+        const hit = (res.orders || []).find(
+          o =>
+            (priorIds ? !priorIds.has(o.orderId) : true) &&
+            o.side === submitted.side &&
+            o.qty === submitted.qty &&
+            o.orderType === submitted.orderType &&
+            same(o.targetAsset?.address, submitted.targetAsset) &&
+            same(o.contraAsset?.address, submitted.contraAsset),
+        );
+        if (hit) return hit;
+      } catch {
+        /* list is eventually consistent; keep trying */
+      }
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    return undefined;
   };
 
   const cancel = async (o: FlashOrder) => {
@@ -346,7 +416,7 @@ const TradeDrawer: React.FC = () => {
       case 'submitting':
         return 'Placing order…';
       case 'placed':
-        return 'Waiting for fill…';
+        return pollTimedOut ? 'Resting' : 'Waiting for fill…';
       case 'filled':
         return 'Filled';
       case 'failed':
@@ -354,7 +424,7 @@ const TradeDrawer: React.FC = () => {
       default:
         return orderType === 'limit' ? 'Place limit order' : 'Place market order';
     }
-  }, [address, wrongNetwork, chainLabel, step, orderType]);
+  }, [address, wrongNetwork, chainLabel, step, orderType, pollTimedOut]);
 
   if (!isOpen || !token) return null;
 
@@ -531,6 +601,9 @@ const TradeDrawer: React.FC = () => {
                     </span>
                   </div>
                   <div className="mono">{orderId}</div>
+                  {pollTimedOut && step === 'placed' && (
+                    <div>Order is resting with Flash. Track or cancel it in the Orders tab.</div>
+                  )}
                   {order?.filled?.targetAmount && (
                     <div>
                       Filled {fmt(order.filled.targetAmount)} {token.token_symbol} @ $
@@ -560,6 +633,7 @@ const TradeDrawer: React.FC = () => {
                     onClick={() => {
                       reset();
                       setTxHash(null);
+                      setPollTimedOut(false);
                     }}>
                     New order
                   </button>
