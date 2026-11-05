@@ -26,8 +26,13 @@ QUOTE_PASSTHROUGH = (
     "forceMinimalAllowance",
 )
 
+# Quote-time only: Flash's SubmitOrderRequest schema has no such fields and the
+# reference implementation (DefinitiveCo/flash-mcp README) says not to send them;
+# an unknown field on /order risks a 400 VALIDATION_ERROR after the user signed.
+QUOTE_ONLY_FIELDS = frozenset({"expireTime", "evmUsePermit2", "forceMinimalAllowance"})
+
 # Fields echoed from the quote to POST /order plus the signature material.
-ORDER_PASSTHROUGH = QUOTE_PASSTHROUGH + (
+ORDER_PASSTHROUGH = tuple(f for f in QUOTE_PASSTHROUGH if f not in QUOTE_ONLY_FIELDS) + (
     "quoteId", "userSignature", "evmOrderTypedData", "evmPermitTypedData",
     "evmPermitSignature", "erc8021AttributionCode",
 )

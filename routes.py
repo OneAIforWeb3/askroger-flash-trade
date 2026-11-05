@@ -8,8 +8,8 @@ from app.api.custom_decorators import require_login
 from app.api.trade import trade_bp
 from app.api.trade.constants import (
     ALLOWED_ORDER_TYPES, ALLOWED_SIDES, CHAIN_ALIASES, FLASH_CHAINS, INSERT_ORDER_QUERY,
-    ORDER_PASSTHROUGH, ORDER_STATUSES_TERMINAL, QUOTE_PASSTHROUGH, TOKEN_ORDERS_COUNT_QUERY,
-    TOKEN_ORDERS_SUMMARY_QUERY, UPDATE_ORDER_STATUS_QUERY,
+    ORDER_PASSTHROUGH, ORDER_STATUSES_TERMINAL, QUOTE_ONLY_FIELDS, QUOTE_PASSTHROUGH,
+    TOKEN_ORDERS_COUNT_QUERY, TOKEN_ORDERS_SUMMARY_QUERY, UPDATE_ORDER_STATUS_QUERY,
 )
 from app.api.trade.flash_client import flash_request, integrator_fee_bps, is_configured
 
@@ -90,6 +90,8 @@ def place_order():
     payload, err = _validate_order_fields(body)
     if err:
         return err
+    for key in QUOTE_ONLY_FIELDS:
+        payload.pop(key, None)
     for key in ORDER_PASSTHROUGH:
         if key in body and body[key] is not None and key not in payload:
             payload[key] = body[key]
