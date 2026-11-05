@@ -15,6 +15,15 @@ from app.api.trade.constants import (
 from app.api.trade.flash_client import flash_request, integrator_fee_bps, is_configured
 
 
+@trade_bp.after_request
+def _never_cache(resp):
+    """api.x-alpha.ai is fronted by CloudFront, which caches GETs for ~2 minutes
+    regardless of auth headers. An order status served stale left the drawer on
+    'accepted' after the fill had landed. Nothing under /trade is cacheable."""
+    resp.headers["Cache-Control"] = "no-store, private, max-age=0"
+    return resp
+
+
 def normalize_chain(chain):
     chain = str(chain or "").strip().lower()
     return CHAIN_ALIASES.get(chain, chain)
