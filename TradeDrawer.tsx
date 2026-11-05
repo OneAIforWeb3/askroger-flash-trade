@@ -606,8 +606,8 @@ const TradeDrawer: React.FC = () => {
                   )}
                   {Number(order?.filled?.targetAmount) > 0 && (
                     <div>
-                      Filled {fmt(order.filled.targetAmount)} {token.token_symbol} @ $
-                      {fmt(order.filled.averageNotionalPrice || order.filled.averagePrice)}
+                      Filled {fmt(order?.filled?.targetAmount)} {token.token_symbol} @ $
+                      {fmt(order?.filled?.averageNotionalPrice || order?.filled?.averagePrice)}
                     </div>
                   )}
                   {fillTx && explorer && (
