@@ -69,6 +69,21 @@ const relTime = (iso?: string | null): string => {
   return `${Math.floor(h / 24)} d ago`;
 };
 
+type ExpiryKey = '1h' | '24h' | '7d' | 'gtc';
+const EXPIRY_OPTIONS: { key: ExpiryKey; label: string; ms: number | null }[] = [
+  { key: '1h', label: '1 hour', ms: 60 * 60 * 1000 },
+  { key: '24h', label: '24 hours', ms: 24 * 60 * 60 * 1000 },
+  { key: '7d', label: '7 days', ms: 7 * 24 * 60 * 60 * 1000 },
+  { key: 'gtc', label: 'Never (GTC)', ms: null },
+];
+const LIMIT_PRESETS: { label: string; pct: number }[] = [
+  { label: 'Market', pct: 0 },
+  { label: '−2%', pct: -2 },
+  { label: '−5%', pct: -5 },
+  { label: '−10%', pct: -10 },
+];
+const priceAtPct = (spot: number, pct: number): string => fmt(spot * (1 + pct / 100), 6).replace(/,/g, '');
+
 const STEP_ORDER: { key: TradeStep; label: string }[] = [
   { key: 'quoting', label: 'Quote' },
   { key: 'approving', label: 'Approve' },
@@ -115,6 +130,8 @@ const TradeDrawer: React.FC = () => {
   const [usdcBalance, setUsdcBalance] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [customPct, setCustomPct] = useState('');
+  const [expiry, setExpiry] = useState<ExpiryKey>('1h');
   const [quotedAt, setQuotedAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const limitTouched = useRef(false);
@@ -144,10 +161,14 @@ const TradeDrawer: React.FC = () => {
         orderType: type,
         funderAddress: funder,
       };
-      if (type === 'limit') req.limitNotionalPrice = price;
+      if (type === 'limit') {
+        req.limitNotionalPrice = price;
+        const ms = EXPIRY_OPTIONS.find(o => o.key === expiry)?.ms;
+        if (ms) req.expireTime = new Date(Date.now() + ms).toISOString();
+      }
       return req;
     },
-    [chain, usdc, token?.token_id, amount],
+    [chain, usdc, token?.token_id, amount, expiry],
   );
 
   // Reset the form whenever a new token opens the drawer.
@@ -159,6 +180,7 @@ const TradeDrawer: React.FC = () => {
     setTxHash(null);
     setPollTimedOut(false);
     setLimitPrice('');
+    setCustomPct('');
     setCopied(false);
     limitTouched.current = false;
   }, [isOpen, token?.token_id]);
@@ -219,7 +241,7 @@ const TradeDrawer: React.FC = () => {
         setPreviewError(null);
         if (orderType === 'limit' && !limitTouched.current && !price) {
           const p = impliedPrice(q);
-          if (p) setLimitPrice(fmt(p * 1.01, 6).replace(/,/g, ''));
+          if (p) setLimitPrice(priceAtPct(p, 0));
         }
       } catch (err) {
         if (!cancelled) {
@@ -636,44 +658,99 @@ const TradeDrawer: React.FC = () => {
               </div>
 
               {orderType === 'limit' && (
-                <div className="flash-field">
-                  <div className="flash-field__row">
-                    <span>Limit price · buys at or below</span>
-                    {spot && (
-                      <span className="flash-balance">
-                        <button
-                          disabled={busy}
-                          onClick={() => {
-                            limitTouched.current = true;
-                            setLimitPrice(fmt(spot * 1.01, 6).replace(/,/g, ''));
-                          }}>
-                          Spot +1%
-                        </button>
-                        <button
-                          disabled={busy}
-                          onClick={() => {
-                            limitTouched.current = true;
-                            setLimitPrice(fmt(spot * 0.9, 6).replace(/,/g, ''));
-                          }}>
-                          Spot −10%
-                        </button>
+                <>
+                  <div className="flash-field">
+                    <div className="flash-field__row">
+                      <span className="flash-limit-label">
+                        When 1 {symbol} is worth
+                        {spot && limitPrice && Number(limitPrice) > 0 && (
+                          <span
+                            className={`pill pct ${Number(limitPrice) / spot - 1 < -0.0005 ? 'ok' : Number(limitPrice) / spot - 1 > 0.0005 ? 'wait' : ''}`}>
+                            {((Number(limitPrice) / spot - 1) * 100).toFixed(1)}%
+                          </span>
+                        )}
                       </span>
-                    )}
+                      {spot && (
+                        <button
+                          className="flash-reset"
+                          disabled={busy}
+                          onClick={() => {
+                            limitTouched.current = true;
+                            setCustomPct('');
+                            setLimitPrice(priceAtPct(spot, 0));
+                          }}>
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                    <div className="flash-input">
+                      <input
+                        inputMode="decimal"
+                        value={limitPrice}
+                        disabled={busy}
+                        onChange={e => {
+                          limitTouched.current = true;
+                          setCustomPct('');
+                          setLimitPrice(e.target.value.replace(/[^0-9.eE-]/g, ''));
+                        }}
+                        placeholder="auto from quote"
+                      />
+                      <span className="flash-unit">USD</span>
+                    </div>
+                    <div className="flash-quick">
+                      {LIMIT_PRESETS.map(pr => {
+                        const active =
+                          !!spot &&
+                          !!limitPrice &&
+                          Math.abs((Number(limitPrice) / spot - 1) * 100 - pr.pct) < 0.05 &&
+                          !customPct;
+                        return (
+                          <button
+                            key={pr.label}
+                            className={active ? 'active' : ''}
+                            disabled={busy || !spot}
+                            onClick={() => {
+                              if (!spot) return;
+                              limitTouched.current = true;
+                              setCustomPct('');
+                              setLimitPrice(priceAtPct(spot, pr.pct));
+                            }}>
+                            {pr.label}
+                          </button>
+                        );
+                      })}
+                      <label className={`flash-custom-pct ${customPct ? 'active' : ''}`}>
+                        <span aria-hidden="true">✎</span>
+                        <input
+                          inputMode="decimal"
+                          value={customPct}
+                          disabled={busy || !spot}
+                          placeholder="0"
+                          onChange={e => {
+                            const v = e.target.value.replace(/[^0-9.-]/g, '');
+                            setCustomPct(v);
+                            const pct = Number(v);
+                            if (spot && v !== '' && v !== '-' && Number.isFinite(pct)) {
+                              limitTouched.current = true;
+                              setLimitPrice(priceAtPct(spot, pct));
+                            }
+                          }}
+                        />
+                        %
+                      </label>
+                    </div>
                   </div>
-                  <div className="flash-input">
-                    <input
-                      inputMode="decimal"
-                      value={limitPrice}
-                      disabled={busy}
-                      onChange={e => {
-                        limitTouched.current = true;
-                        setLimitPrice(e.target.value.replace(/[^0-9.eE-]/g, ''));
-                      }}
-                      placeholder="auto from quote"
-                    />
-                    <span className="flash-unit">USD / {symbol}</span>
+                  <div className="flash-field__row flash-expires">
+                    <span>Expires in</span>
+                    <select value={expiry} disabled={busy} onChange={e => setExpiry(e.target.value as ExpiryKey)}>
+                      {EXPIRY_OPTIONS.map(o => (
+                        <option key={o.key} value={o.key}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                </div>
+                </>
               )}
 
               <div className="flash-summary">
