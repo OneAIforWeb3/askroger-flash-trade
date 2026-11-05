@@ -855,11 +855,20 @@ $yellow: var(--yellow-text-color-new); // #f5cd47
 }
 
 .exchange-pill.flash-pill--compact {
-  padding: 2px 7px;
-  font-size: 12px;
-  line-height: 1;
-  border: 0.5px solid rgba(75, 206, 151, 0.5);
+  // Same box as the row's "Trade" button (.trade-link-text): 12px text, 2px 8px
+  // padding, hairline border, 4px radius; stretch to the container so heights match.
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: var(--font-size-xl);
+  line-height: normal;
+  border: 0.5px solid rgba(75, 206, 151, 0.6);
   border-radius: 4px;
   box-shadow: none;
   gap: 0;
+  span {
+    font-size: 11px;
+    line-height: normal;
+  }
 }
