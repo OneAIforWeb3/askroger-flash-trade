@@ -112,6 +112,27 @@ export interface TokenOrdersSummary {
   recent: { orderType: string; side: Side; funder: string; status: string; placedAt: string }[];
 }
 
+export interface MyOrder {
+  orderId: string;
+  chain: string;
+  tokenId: string;
+  pairId?: string | null;
+  tokenSymbol?: string | null;
+  orderType: string;
+  side: Side;
+  qty: string;
+  contraAsset: string;
+  quoteNotionalUsd?: string | null;
+  filledNotionalUsd?: string | null;
+  integratorFeeBps: number;
+  limitNotionalPrice?: string | null;
+  status: string;
+  fillTx?: string | null;
+  placedAt: string;
+  updatedAt: string;
+  funderAddress: string;
+}
+
 export const TERMINAL_STATUSES = new Set([
   'ORDER_STATUS_FILLED',
   'ORDER_STATUS_CANCELLED',
@@ -148,6 +169,9 @@ export const cancelOrder = async (
   userSignature: string,
 ): Promise<{ ok: boolean }> =>
   (await apiClientNew.post(`trade/orders/${orderId}/cancel`, { cancelMessage, userSignature })).data;
+
+export const getMyOrders = async (): Promise<{ orders: MyOrder[] }> =>
+  (await apiClientNew.get('trade/mine', { params: bust() })).data;
 
 export const getTokenOrdersSummary = async (chain: string, tokenId: string): Promise<TokenOrdersSummary> =>
   (await apiClientNew.get(`trade/token/${chain}/${tokenId}/orders`, { params: bust() })).data;

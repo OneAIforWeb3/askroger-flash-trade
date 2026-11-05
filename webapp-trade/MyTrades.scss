@@ -1,0 +1,229 @@
+$card-bg: var(--secondary-bg-color-new);
+$border: var(--grey-bg-color-new, #313131);
+$fg: var(--primary-text-color-new);
+$muted: var(--secondary-text-color-new);
+$blue-text: var(--blue-text-color-new);
+$green: var(--green-text-color-new);
+$red: var(--red-text-color-new);
+$yellow: var(--yellow-text-color-new);
+
+.my-trades-page {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+  color: $fg;
+  text-align: left;
+  font-family: Inter, system-ui, sans-serif;
+
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    color: $blue-text;
+  }
+  h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: $muted;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 20px 0 8px;
+  }
+  p {
+    margin: 0;
+    font-size: 13px;
+    color: $muted;
+    max-width: 560px;
+  }
+}
+
+.my-trades-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  .refresh {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid $border;
+    background: transparent;
+    color: $fg;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    &:disabled {
+      opacity: 0.5;
+    }
+  }
+}
+
+.my-trades-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0 6px;
+  > div {
+    background: $card-bg;
+    border: 1px solid $border;
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .label {
+    font-size: 11px;
+    color: $muted;
+  }
+  .value {
+    font-size: 20px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.my-trades-error {
+  color: $red;
+  background: rgba(248, 113, 104, 0.12);
+  border: 1px solid rgba(248, 113, 104, 0.3);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 12px;
+  margin-top: 12px;
+}
+
+.my-trades-empty {
+  margin-top: 16px;
+  padding: 32px 16px;
+  border: 1px dashed $border;
+  border-radius: 12px;
+  color: $muted;
+  font-size: 13px;
+  text-align: center;
+}
+
+.my-trades-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.my-trade {
+  display: grid;
+  // Fixed last column: each row is its own grid, so an `auto` actions column made
+  // rows with an "Onchain" button narrower in the middle than rows without one.
+  grid-template-columns: minmax(140px, 1.1fr) minmax(150px, 1.2fr) minmax(150px, 1fr) 200px;
+  gap: 12px;
+  align-items: center;
+  background: $card-bg;
+  border: 1px solid $border;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 13px;
+
+  @media (max-width: 700px) {
+    grid-template-columns: 1fr 1fr;
+    &__actions {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+    }
+  }
+
+  &__token {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    img {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+    }
+    a {
+      color: $fg;
+      font-weight: 700;
+      text-decoration: none;
+      &:hover {
+        color: $blue-text;
+      }
+    }
+  }
+  &__chain,
+  &__meta {
+    color: $muted;
+    font-size: 11px;
+  }
+  &__what {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  &__type {
+    text-transform: capitalize;
+    font-weight: 600;
+  }
+  &__amt {
+    font-variant-numeric: tabular-nums;
+  }
+  &__status {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+  }
+  &__actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    a,
+    button {
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 999px;
+      padding: 4px 10px;
+      border: 1px solid $border;
+      background: transparent;
+      color: $blue-text;
+      text-decoration: none;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .cancel {
+      color: $red;
+      border-color: rgba(248, 113, 104, 0.5);
+    }
+    .again {
+      color: $green;
+      border-color: rgba(75, 206, 151, 0.5);
+    }
+    button:disabled {
+      opacity: 0.5;
+    }
+  }
+
+  .pill {
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: capitalize;
+    background: rgba(133, 184, 255, 0.16);
+    color: $blue-text;
+    &.ok {
+      background: rgba(75, 206, 151, 0.16);
+      color: $green;
+      box-shadow: 0 0 10px 0 rgba(75, 206, 151, 0.45);
+    }
+    &.bad {
+      background: rgba(248, 113, 104, 0.16);
+      color: $red;
+    }
+    &.wait {
+      background: rgba(245, 205, 71, 0.14);
+      color: $yellow;
+    }
+  }
+}

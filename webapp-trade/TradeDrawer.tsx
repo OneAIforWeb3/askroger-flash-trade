@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './TradeDrawer.scss';
+import { Link } from 'react-router-dom';
 import CrossIcon from 'icons/CrossIcon';
 import { CHAIN_ICONS } from '@constants/constants';
 import { useTradeStore, TradeStep } from './useTradeStore';
@@ -991,6 +992,10 @@ const TradeDrawer: React.FC = () => {
           )}
 
           <div className="flash-foot">
+            <Link to="/app/trades" onClick={closeDrawer} className="flash-foot__link">
+              All my Flash trades →
+            </Link>
+            <br />
             Powered by{' '}
             <a href="https://flash.definitive.fi/docs" target="_blank" rel="noopener noreferrer">
               Definitive Flash

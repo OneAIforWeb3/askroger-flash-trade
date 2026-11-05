@@ -802,10 +802,14 @@ $yellow: var(--yellow-text-color-new); // #f5cd47
     color: $faint;
     font-size: 11px;
     text-align: center;
-    line-height: 1.5;
+    line-height: 1.6;
     a {
       color: $blue-text;
       text-decoration: none;
+    }
+    &__link {
+      font-weight: 600;
+      font-size: 12px;
     }
   }
 }
