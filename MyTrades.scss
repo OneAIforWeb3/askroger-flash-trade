@@ -111,7 +111,9 @@ $yellow: var(--yellow-text-color-new);
 
 .my-trade {
   display: grid;
-  grid-template-columns: 1.3fr 1.2fr 1fr auto;
+  // Fixed last column: each row is its own grid, so an `auto` actions column made
+  // rows with an "Onchain" button narrower in the middle than rows without one.
+  grid-template-columns: minmax(140px, 1.1fr) minmax(150px, 1.2fr) minmax(150px, 1fr) 200px;
   gap: 12px;
   align-items: center;
   background: $card-bg;
@@ -122,6 +124,10 @@ $yellow: var(--yellow-text-color-new);
 
   @media (max-width: 700px) {
     grid-template-columns: 1fr 1fr;
+    &__actions {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+    }
   }
 
   &__token {
@@ -170,7 +176,8 @@ $yellow: var(--yellow-text-color-new);
     display: flex;
     gap: 6px;
     justify-content: flex-end;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    white-space: nowrap;
     a,
     button {
       font-size: 11px;
