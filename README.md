@@ -49,10 +49,10 @@ Two folders, published with their full commit history via `git subtree split` fr
 
 Frontend: drop `webapp-trade/` into a Vite + React app as `src/features/trade/`, provide an axios client at `@lib/api` named `apiClientNew` that targets the API with auth headers, provide `CHAIN_ICONS` at `@constants/constants`, and mount `<TradeDrawer />` plus a button that calls `useTradeStore().openDrawer(tokenRow)`.
 
-Backend: copy `flask-trade/` to `app/api/trade/`, register the blueprint under `/trade`, set `FLASH_API_KEY` and `FLASH_INTEGRATOR_FEE_BPS` in the environment, run the DDL in `constants.CREATE_TABLE_DDL`, and provide a `require_login` decorator at `app.api.custom_decorators` that sets `g.tg_id`.
+Backend: copy `flask-trade/trade/` to `app/api/trade/`, register the blueprint under `/trade`, set `FLASH_API_KEY` and `FLASH_INTEGRATOR_FEE_BPS` in the environment, run the DDL in `constants.CREATE_TABLE_DDL`, and provide a `require_login` decorator at `app.api.custom_decorators` that sets `g.tg_id`.
 
 ```bash
-python3 -m pytest flask-trade/test_trade_routes.py -v
+cd flask-trade && python3 -m pytest test_trade_routes.py -v
 ```
 
 ## Links
