@@ -604,7 +604,7 @@ const TradeDrawer: React.FC = () => {
                   {pollTimedOut && step === 'placed' && (
                     <div>Order is resting with Flash. Track or cancel it in the Orders tab.</div>
                   )}
-                  {order?.filled?.targetAmount && (
+                  {Number(order?.filled?.targetAmount) > 0 && (
                     <div>
                       Filled {fmt(order.filled.targetAmount)} {token.token_symbol} @ $
                       {fmt(order.filled.averageNotionalPrice || order.filled.averagePrice)}

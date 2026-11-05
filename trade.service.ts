@@ -117,7 +117,13 @@ export const TERMINAL_STATUSES = new Set([
   'ORDER_STATUS_TERMINATED',
 ]);
 
-export const getTradeStatus = async (): Promise<TradeStatus> => (await apiClientNew.get('trade/status')).data;
+// api.x-alpha.ai sits behind CloudFront, which caches GETs for about two minutes
+// regardless of auth headers. Order status must never be served stale, so every
+// GET carries a cache-busting timestamp.
+const bust = (params: Record<string, unknown> = {}) => ({ ...params, _t: Date.now() });
+
+export const getTradeStatus = async (): Promise<TradeStatus> =>
+  (await apiClientNew.get('trade/status', { params: bust() })).data;
 
 export const postQuote = async (body: QuoteRequest): Promise<QuoteResponse> =>
   (await apiClientNew.post('trade/quote', body)).data;
@@ -126,13 +132,13 @@ export const postOrder = async (body: OrderRequest): Promise<{ orderId: string }
   (await apiClientNew.post('trade/order', body)).data;
 
 export const getOrders = async (funderAddress: string, statuses?: string): Promise<{ orders: FlashOrder[] }> =>
-  (await apiClientNew.get('trade/orders', { params: { funderAddress, statuses, pageSize: 50 } })).data;
+  (await apiClientNew.get('trade/orders', { params: bust({ funderAddress, statuses, pageSize: 50 }) })).data;
 
 export const getOrder = async (
   orderId: string,
   funderAddress: string,
 ): Promise<{ order: FlashOrder; fills: FlashFill[] }> =>
-  (await apiClientNew.get(`trade/orders/${orderId}`, { params: { funderAddress } })).data;
+  (await apiClientNew.get(`trade/orders/${orderId}`, { params: bust({ funderAddress }) })).data;
 
 export const cancelOrder = async (
   orderId: string,
@@ -142,7 +148,7 @@ export const cancelOrder = async (
   (await apiClientNew.post(`trade/orders/${orderId}/cancel`, { cancelMessage, userSignature })).data;
 
 export const getTokenOrdersSummary = async (chain: string, tokenId: string): Promise<TokenOrdersSummary> =>
-  (await apiClientNew.get(`trade/token/${chain}/${tokenId}/orders`)).data;
+  (await apiClientNew.get(`trade/token/${chain}/${tokenId}/orders`, { params: bust() })).data;
 
 /** Flash's cancel message format (em dash, single newline). Signed with personal_sign. */
 export const cancelMessageFor = (orderId: string): string => `Definitive Flash v1 — Cancel Order\nOrder: ${orderId}`;
