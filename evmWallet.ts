@@ -143,3 +143,20 @@ export async function waitForReceipt(txHash: string, timeoutMs = 120_000): Promi
 
 export const shortAddress = (addr?: string | null): string =>
   addr && addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr || '';
+
+/** ERC-20 balanceOf via eth_call, decoded to a decimal string. Returns null on any failure. */
+export async function getErc20Balance(token: string, owner: string, decimals: number): Promise<string | null> {
+  const provider = getProvider();
+  if (!provider) return null;
+  try {
+    const data = `0x70a08231${owner.toLowerCase().replace(/^0x/, '').padStart(64, '0')}`;
+    const hex = (await provider.request({ method: 'eth_call', params: [{ to: token, data }, 'latest'] })) as string;
+    const raw = BigInt(hex || '0x0');
+    const base = BigInt(10) ** BigInt(decimals);
+    const whole = raw / base;
+    const frac = (raw % base).toString().padStart(decimals, '0').replace(/0+$/, '');
+    return frac ? `${whole}.${frac}` : whole.toString();
+  } catch {
+    return null;
+  }
+}

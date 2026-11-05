@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './TradeDrawer.scss';
 import CrossIcon from 'icons/CrossIcon';
+import { CHAIN_ICONS } from '@constants/constants';
 import { useTradeStore, TradeStep } from './useTradeStore';
 import { CHAIN_LABELS, EVM_CHAIN_IDS, EXPLORER_TX_BY_CHAIN, USDC_BY_CHAIN, normalizeChain } from './chains';
 import {
   connect,
   getChainId,
+  getErc20Balance,
   getProvider,
   isUserRejection,
   personalSign,
@@ -30,9 +32,10 @@ import {
   postQuote,
 } from './trade.service';
 
-/** Flash accepts quotes without a real funder; we use this for the live preview before a wallet is connected. */
+/** Flash accepts quotes without a real funder; used for the live preview before a wallet is connected. */
 const PREVIEW_FUNDER = '0x000000000000000000000000000000000000dEaD';
 const QUICK_AMOUNTS = ['2', '5', '10', '25'];
+const USDC_ICON = 'https://dd.dexscreener.com/ds-data/tokens/base/0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.png';
 
 const fmt = (v?: string | number | null, digits = 6): string => {
   if (v === null || v === undefined || v === '') return '–';
@@ -51,7 +54,18 @@ const impliedPrice = (q: QuoteResponse | null): number | null => {
   return notional / amount;
 };
 
-const statusLabel = (s?: string | null) => (s || '').replace('ORDER_STATUS_', '').replace('_', ' ').toLowerCase();
+const statusLabel = (s?: string | null) => (s || '').replace('ORDER_STATUS_', '').replace(/_/g, ' ').toLowerCase();
+
+const relTime = (iso?: string | null): string => {
+  if (!iso) return '';
+  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} h ago`;
+  return `${Math.floor(h / 24)} d ago`;
+};
 
 const STEP_ORDER: { key: TradeStep; label: string }[] = [
   { key: 'quoting', label: 'Quote' },
@@ -60,6 +74,8 @@ const STEP_ORDER: { key: TradeStep; label: string }[] = [
   { key: 'submitting', label: 'Submit' },
   { key: 'placed', label: 'Fill' },
 ];
+
+const Spinner = () => <span className="flash-spinner" aria-hidden="true" />;
 
 const TradeDrawer: React.FC = () => {
   const {
@@ -90,19 +106,25 @@ const TradeDrawer: React.FC = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [orders, setOrders] = useState<FlashOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [pollTimedOut, setPollTimedOut] = useState(false);
+  const [usdcBalance, setUsdcBalance] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const limitTouched = useRef(false);
   const submitFailed = useRef(false);
-  const [pollTimedOut, setPollTimedOut] = useState(false);
 
   const chain = normalizeChain(token?.chain);
   const wantedChainId = chain ? EVM_CHAIN_IDS[chain] : undefined;
   const usdc = chain ? USDC_BY_CHAIN[chain] : undefined;
   const chainLabel = chain ? CHAIN_LABELS[chain] || chain : '';
+  const chainIcon = chain ? CHAIN_ICONS[chain] : undefined;
   const explorer = chain ? EXPLORER_TX_BY_CHAIN[chain] : undefined;
   const wrongNetwork = !!address && !!wantedChainId && chainId !== wantedChainId;
   const busy = ['connecting', 'switching', 'quoting', 'approving', 'signing', 'submitting'].includes(step);
+  const symbol = token?.token_symbol || '';
+  const change24 = Number(token?.pc_24_hr);
 
   const baseRequest = useCallback(
     (funder: string, type: OrderType, price: string): QuoteRequest | null => {
@@ -132,10 +154,11 @@ const TradeDrawer: React.FC = () => {
     setTxHash(null);
     setPollTimedOut(false);
     setLimitPrice('');
+    setCopied(false);
     limitTouched.current = false;
   }, [isOpen, token?.token_id]);
 
-  // Wallet: remember an already-connected account, follow account/chain changes.
+  // Follow wallet account / chain changes.
   useEffect(() => {
     const provider = getProvider();
     if (!provider?.on) return;
@@ -153,6 +176,19 @@ const TradeDrawer: React.FC = () => {
       provider.removeListener?.('chainChanged', onChain);
     };
   }, [setWallet]);
+
+  // USDC balance of the connected wallet on the token's chain.
+  const refreshBalance = useCallback(async () => {
+    if (!address || !usdc || wrongNetwork) {
+      setUsdcBalance(null);
+      return;
+    }
+    setUsdcBalance(await getErc20Balance(usdc.address, address, usdc.decimals));
+  }, [address, usdc, wrongNetwork]);
+
+  useEffect(() => {
+    if (isOpen) refreshBalance();
+  }, [isOpen, refreshBalance, step]);
 
   // Live preview quote (debounced). A limit without a price is previewed as market so we
   // can prefill the limit price from the implied spot.
@@ -194,7 +230,7 @@ const TradeDrawer: React.FC = () => {
     };
   }, [isOpen, chain, usdc, amount, orderType, limitPrice, address, baseRequest]);
 
-  // Poll the placed order until it reaches a terminal status.
+  // Poll the placed order until it reaches a terminal status (3 min cap for resting orders).
   useEffect(() => {
     if (step !== 'placed' || !orderId || !address) return;
     let stopped = false;
@@ -205,19 +241,18 @@ const TradeDrawer: React.FC = () => {
         setOrderState(res.order, res.fills || []);
         const s = res.order?.status;
         if (s === 'ORDER_STATUS_FILLED') setStep('filled');
-        else if (s && TERMINAL_STATUSES.has(s))
-          setStep(
-            'failed',
-            `Order ${statusLabel(s)}${res.order?.closeReason ? `: ${res.order.closeReason.replace('REASON_', '').replace(/_/g, ' ').toLowerCase()}` : ''}`,
-          );
+        else if (s && TERMINAL_STATUSES.has(s)) {
+          const why = res.order?.closeReason
+            ? `: ${res.order.closeReason.replace('REASON_', '').replace(/_/g, ' ').toLowerCase()}`
+            : '';
+          setStep('failed', `Order ${statusLabel(s)}${why}`);
+        }
       } catch {
         /* transient; keep polling */
       }
     };
     tick();
     const id = setInterval(tick, 3000);
-    // Resting limit orders can sit for hours; stop polling after 3 minutes and leave the
-    // order visible in the Orders tab.
     const cap = setTimeout(
       () => {
         stopped = true;
@@ -236,6 +271,7 @@ const TradeDrawer: React.FC = () => {
   const loadOrders = useCallback(async () => {
     if (!address) return;
     setOrdersLoading(true);
+    setOrdersError(null);
     try {
       const res = await getOrders(address);
       const mine = (res.orders || []).filter(
@@ -243,7 +279,7 @@ const TradeDrawer: React.FC = () => {
       );
       setOrders(mine);
     } catch (err) {
-      setPreviewError(describeApiError(err, 'Could not load orders'));
+      setOrdersError(describeApiError(err, 'Could not load orders'));
     } finally {
       setOrdersLoading(false);
     }
@@ -273,79 +309,6 @@ const TradeDrawer: React.FC = () => {
       setWallet(addr, wantedChainId);
     }
     return addr;
-  };
-
-  const place = async () => {
-    submitFailed.current = false;
-    try {
-      const funder = await ensureWallet();
-      if (!chain || !usdc) throw new Error('This chain is not enabled for Flash trading');
-      const price = limitPrice.trim();
-      if (orderType === 'limit' && !price) throw new Error('Enter a limit price');
-
-      setStep('quoting');
-      let q = await postQuote(baseRequest(funder, orderType, price) as QuoteRequest);
-      setQuote(q);
-
-      if (q.wrap?.evmTx) throw new Error('Native-asset wrap is not supported in v1; buy with USDC');
-
-      if (q.evm?.approveTx) {
-        setStep('approving');
-        const hash = await sendTransaction({ from: funder, to: q.evm.approveTx.to, data: q.evm.approveTx.data });
-        setTxHash(hash);
-        await waitForReceipt(hash);
-        // The market deadline is short; re-quote after the approval lands.
-        setStep('quoting');
-        q = await postQuote(baseRequest(funder, orderType, price) as QuoteRequest);
-        setQuote(q);
-      }
-      if (!q.evm?.orderTypedData) throw new Error('Flash returned no signing payload');
-
-      setStep('signing');
-      let permitSignature: string | undefined;
-      if (q.evm.permitTypedData) permitSignature = await signTypedDataV4(funder, q.evm.permitTypedData);
-      const signature = await signTypedDataV4(funder, q.evm.orderTypedData);
-
-      setStep('submitting');
-      // Echo the trade fields as quoted (assets from the quote response, like Definitive's
-      // reference client); quote-only fields are stripped server-side.
-      const submitBody = {
-        ...(baseRequest(funder, orderType, price) as QuoteRequest),
-        targetAsset: q.targetAsset || (token?.token_id as string),
-        contraAsset: q.contraAsset || usdc.address,
-        quoteId: q.quoteId,
-        userSignature: signature,
-        evmOrderTypedData: q.evm.orderTypedData,
-        evmPermitTypedData: q.evm.permitTypedData || undefined,
-        evmPermitSignature: permitSignature,
-        meta: {
-          pair_id: token?.pair_id,
-          token_symbol: token?.token_symbol,
-          quote_notional_usd: q.from?.notional,
-        },
-      };
-      // Flash's /order has been seen to create (even fill) an order and still answer 4xx.
-      // Snapshot the wallet's orders first so an error can be reconciled instead of retried,
-      // which would double-spend.
-      const priorIds = await snapshotOrderIds(funder);
-      try {
-        const res = await postOrder(submitBody);
-        setPlaced(res.orderId);
-      } catch (submitErr) {
-        const recovered = await findCreatedOrder(funder, submitBody, priorIds);
-        if (recovered) {
-          setPlaced(recovered.orderId);
-          return;
-        }
-        submitFailed.current = true;
-        throw submitErr;
-      }
-    } catch (err) {
-      const msg = isUserRejection(err)
-        ? 'Cancelled in wallet'
-        : describeApiError(err, (err as Error)?.message || 'Order failed');
-      setStep('failed', submitFailed.current ? `${msg}. Check the Orders tab before placing again.` : msg);
-    }
   };
 
   const snapshotOrderIds = async (funder: string): Promise<Set<string> | null> => {
@@ -384,19 +347,106 @@ const TradeDrawer: React.FC = () => {
     return undefined;
   };
 
+  const place = async () => {
+    submitFailed.current = false;
+    try {
+      const funder = await ensureWallet();
+      if (!chain || !usdc) throw new Error('This chain is not enabled for Flash trading');
+      const price = limitPrice.trim();
+      if (orderType === 'limit' && !price) throw new Error('Enter a limit price');
+      if (usdcBalance !== null && Number(amount) > Number(usdcBalance)) {
+        throw new Error(`Not enough USDC: you have ${fmt(usdcBalance, 4)}`);
+      }
+
+      setStep('quoting');
+      let q = await postQuote(baseRequest(funder, orderType, price) as QuoteRequest);
+      setQuote(q);
+      if (q.wrap?.evmTx) throw new Error('Native-asset wrap is not supported in v1; buy with USDC');
+
+      if (q.evm?.approveTx) {
+        setStep('approving');
+        const hash = await sendTransaction({ from: funder, to: q.evm.approveTx.to, data: q.evm.approveTx.data });
+        setTxHash(hash);
+        await waitForReceipt(hash);
+        // The market deadline is short; re-quote after the approval lands.
+        setStep('quoting');
+        q = await postQuote(baseRequest(funder, orderType, price) as QuoteRequest);
+        setQuote(q);
+      }
+      if (!q.evm?.orderTypedData) throw new Error('Flash returned no signing payload');
+
+      setStep('signing');
+      let permitSignature: string | undefined;
+      if (q.evm.permitTypedData) permitSignature = await signTypedDataV4(funder, q.evm.permitTypedData);
+      const signature = await signTypedDataV4(funder, q.evm.orderTypedData);
+
+      setStep('submitting');
+      const submitBody = {
+        ...(baseRequest(funder, orderType, price) as QuoteRequest),
+        targetAsset: q.targetAsset || (token?.token_id as string),
+        contraAsset: q.contraAsset || usdc.address,
+        quoteId: q.quoteId,
+        userSignature: signature,
+        evmOrderTypedData: q.evm.orderTypedData,
+        evmPermitTypedData: q.evm.permitTypedData || undefined,
+        evmPermitSignature: permitSignature,
+        meta: { pair_id: token?.pair_id, token_symbol: symbol, quote_notional_usd: q.from?.notional },
+      };
+      // Flash's /order has been seen to create (even fill) an order and still answer 4xx.
+      // Snapshot first so an error is reconciled instead of retried (a retry double-spends).
+      const priorIds = await snapshotOrderIds(funder);
+      try {
+        const res = await postOrder(submitBody);
+        setPlaced(res.orderId);
+      } catch (submitErr) {
+        const recovered = await findCreatedOrder(funder, submitBody, priorIds);
+        if (recovered) {
+          setPlaced(recovered.orderId);
+          return;
+        }
+        submitFailed.current = true;
+        throw submitErr;
+      }
+    } catch (err) {
+      const msg = isUserRejection(err)
+        ? 'Cancelled in wallet'
+        : describeApiError(err, (err as Error)?.message || 'Order failed');
+      setStep('failed', submitFailed.current ? `${msg}. Check the Orders tab before placing again.` : msg);
+    }
+  };
+
   const cancel = async (o: FlashOrder) => {
     if (!address) return;
     setCancelling(o.orderId);
+    setOrdersError(null);
     try {
       const sig = await personalSign(address, cancelMessageFor(o.orderId));
       await cancelOrder(o.orderId, cancelMessageFor(o.orderId), sig);
       await loadOrders();
       if (o.orderId === orderId) setStep('failed', 'Order cancelled');
     } catch (err) {
-      setPreviewError(isUserRejection(err) ? 'Cancelled in wallet' : describeApiError(err, 'Cancel failed'));
+      setOrdersError(isUserRejection(err) ? 'Cancelled in wallet' : describeApiError(err, 'Cancel failed'));
     } finally {
       setCancelling(null);
     }
+  };
+
+  const copyOrderId = async () => {
+    if (!orderId) return;
+    try {
+      await navigator.clipboard.writeText(orderId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked; ignore */
+    }
+  };
+
+  const newOrder = () => {
+    reset();
+    setTxHash(null);
+    setPollTimedOut(false);
+    setCopied(false);
   };
 
   const primaryLabel = useMemo(() => {
@@ -416,7 +466,7 @@ const TradeDrawer: React.FC = () => {
       case 'submitting':
         return 'Placing order…';
       case 'placed':
-        return pollTimedOut ? 'Resting' : 'Waiting for fill…';
+        return pollTimedOut ? 'Resting with Flash' : 'Waiting for fill…';
       case 'filled':
         return 'Filled';
       case 'failed':
@@ -429,24 +479,49 @@ const TradeDrawer: React.FC = () => {
   if (!isOpen || !token) return null;
 
   const fillTx = fills.find(f => f.transactionId)?.transactionId;
+  const feePaid = fills.reduce((s, f) => s + Number(f.feeNotional || 0), 0);
   const stepIndex = STEP_ORDER.findIndex(s => s.key === step);
   const showSteps = stepIndex >= 0 || step === 'filled';
+  const spot = impliedPrice(preview);
+  const canPlace = !!usdc && (!address || wrongNetwork || step === 'failed' || (!!preview && !previewError));
+  const shareMine = `I just traded $${symbol} on askRoger with @DefinitiveFi Flash. Trade the signal:`;
+  const shareUrl = `https://x.com/intent/post?text=${encodeURIComponent(shareMine)}&url=${encodeURIComponent(window.location.href)}`;
 
   return (
     <>
       <div className="flash-drawer-backdrop" onClick={closeDrawer} />
       <aside className="flash-drawer" role="dialog" aria-label="Trade with Flash">
-        <div className="flash-drawer-header">
-          <div>
-            <div className="flash-title">⚡ Trade {token.token_symbol ? `$${token.token_symbol}` : ''}</div>
-            <div className="flash-sub">Flash by Definitive · {chainLabel} · non-custodial</div>
+        <div className="flash-head">
+          {token.profile_image_url ? (
+            <img className="flash-head__logo" src={token.profile_image_url} alt="" />
+          ) : (
+            <div className="flash-head__logo flash-head__logo--empty">{symbol.slice(0, 2)}</div>
+          )}
+          <div className="flash-head__main">
+            <div className="flash-head__title">
+              <span>⚡ Trade</span>
+              <span className="flash-head__symbol">${symbol}</span>
+            </div>
+            <div className="flash-head__meta">
+              <span className="flash-chain">
+                {chainIcon && <img src={chainIcon} alt="" />}
+                {chainLabel}
+              </span>
+              <span>·</span>
+              <span className="flash-head__price">{spot ? `$${fmt(spot)}` : previewLoading ? '…' : '–'}</span>
+              {Number.isFinite(change24) && change24 !== 0 && (
+                <span className={change24 > 0 ? 'up' : 'down'}>
+                  {change24 > 0 ? '▲' : '▼'} {Math.abs(change24).toFixed(1)}% 24h
+                </span>
+              )}
+            </div>
           </div>
           <button className="flash-close" onClick={closeDrawer} aria-label="Close">
-            <CrossIcon color="var(--secondary-text-color-new)" />
+            <CrossIcon color="currentColor" />
           </button>
         </div>
 
-        <div className="flash-tabs">
+        <div className="flash-seg flash-tabs">
           <button className={tab === 'trade' ? 'active' : ''} onClick={() => setTab('trade')}>
             Trade
           </button>
@@ -459,19 +534,16 @@ const TradeDrawer: React.FC = () => {
           <div className="flash-wallet">
             {address ? (
               <>
-                <span className="flash-wallet-addr">{shortAddress(address)}</span>
-                <span className={`flash-wallet-net ${wrongNetwork ? 'wrong' : ''}`}>
-                  {wrongNetwork ? `Wrong network` : chainLabel}
+                <span className="flash-wallet__addr">{shortAddress(address)}</span>
+                <span className={`flash-wallet__net ${wrongNetwork ? 'wrong' : ''}`}>
+                  {!wrongNetwork && chainIcon && <img src={chainIcon} alt="" />}
+                  {wrongNetwork ? `Wrong network · switch to ${chainLabel}` : chainLabel}
                 </span>
               </>
             ) : (
               <>
-                <span>No wallet connected</span>
-                <button
-                  className="flash-secondary"
-                  style={{ width: 'auto', padding: '4px 10px' }}
-                  onClick={() => place()}
-                  disabled={busy}>
+                <span className="flash-wallet__none">No wallet connected</span>
+                <button className="flash-connect" onClick={() => place()} disabled={busy}>
                   Connect
                 </button>
               </>
@@ -480,7 +552,7 @@ const TradeDrawer: React.FC = () => {
 
           {tab === 'trade' && (
             <>
-              <div className="flash-tabs" style={{ padding: 0 }}>
+              <div className="flash-seg">
                 <button
                   className={orderType === 'market' ? 'active' : ''}
                   disabled={busy}
@@ -496,7 +568,19 @@ const TradeDrawer: React.FC = () => {
               </div>
 
               <div className="flash-field">
-                <label>You pay</label>
+                <div className="flash-field__row">
+                  <span>You pay</span>
+                  {usdcBalance !== null && (
+                    <span className="flash-balance">
+                      Balance {fmt(usdcBalance, 4)} USDC
+                      <button
+                        disabled={busy}
+                        onClick={() => setAmount((Math.floor(Number(usdcBalance) * 100) / 100).toString())}>
+                        Max
+                      </button>
+                    </span>
+                  )}
+                </div>
                 <div className="flash-input">
                   <input
                     inputMode="decimal"
@@ -505,11 +589,18 @@ const TradeDrawer: React.FC = () => {
                     onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
                     placeholder="0"
                   />
-                  <span className="flash-unit">USDC</span>
+                  <span className="flash-unit">
+                    <img src={USDC_ICON} alt="" />
+                    USDC
+                  </span>
                 </div>
                 <div className="flash-quick">
                   {QUICK_AMOUNTS.map(a => (
-                    <button key={a} disabled={busy} onClick={() => setAmount(a)}>
+                    <button
+                      key={a}
+                      className={amount === a ? 'active' : ''}
+                      disabled={busy}
+                      onClick={() => setAmount(a)}>
                       ${a}
                     </button>
                   ))}
@@ -518,7 +609,29 @@ const TradeDrawer: React.FC = () => {
 
               {orderType === 'limit' && (
                 <div className="flash-field">
-                  <label>Limit price (USD per {token.token_symbol || 'token'}) · buys at or below</label>
+                  <div className="flash-field__row">
+                    <span>Limit price · buys at or below</span>
+                    {spot && (
+                      <span className="flash-balance">
+                        <button
+                          disabled={busy}
+                          onClick={() => {
+                            limitTouched.current = true;
+                            setLimitPrice(fmt(spot * 1.01, 6).replace(/,/g, ''));
+                          }}>
+                          Spot +1%
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() => {
+                            limitTouched.current = true;
+                            setLimitPrice(fmt(spot * 0.9, 6).replace(/,/g, ''));
+                          }}>
+                          Spot −10%
+                        </button>
+                      </span>
+                    )}
+                  </div>
                   <div className="flash-input">
                     <input
                       inputMode="decimal"
@@ -530,7 +643,7 @@ const TradeDrawer: React.FC = () => {
                       }}
                       placeholder="auto from quote"
                     />
-                    <span className="flash-unit">USD</span>
+                    <span className="flash-unit">USD / {symbol}</span>
                   </div>
                 </div>
               )}
@@ -539,12 +652,12 @@ const TradeDrawer: React.FC = () => {
                 <div className="row big">
                   <span>You receive</span>
                   <span>
-                    {previewLoading && !preview ? '…' : fmt(preview?.to?.amount)} {token.token_symbol || ''}
+                    {previewLoading && !preview ? '…' : fmt(preview?.to?.amount)} {symbol}
                   </span>
                 </div>
                 <div className="row">
                   <span>{orderType === 'limit' ? 'Spot price' : 'Price'}</span>
-                  <span>{preview ? `$${fmt(impliedPrice(preview))}` : '–'}</span>
+                  <span>{spot ? `$${fmt(spot)}` : '–'}</span>
                 </div>
                 <div className="row">
                   <span>Price impact</span>
@@ -556,21 +669,21 @@ const TradeDrawer: React.FC = () => {
                 </div>
                 <div className="row">
                   <span>
-                    Fees (Flash + askRoger{' '}
+                    Fees · Flash + askRoger{' '}
                     {preview?.integratorFeeBps && preview.integratorFeeBps !== '0'
                       ? `${Number(preview.integratorFeeBps) / 100}%`
                       : ''}
-                    )
                   </span>
                   <span>
                     {preview?.fees?.estimatedFeeNotional ? `$${fmt(preview.fees.estimatedFeeNotional, 4)}` : '–'}
                   </span>
                 </div>
-                {previewError && <div className="flash-error">{previewError}</div>}
-                {!previewError && (
+                {previewError ? (
+                  <div className="flash-error">{previewError}</div>
+                ) : (
                   <div className="muted">
                     {orderType === 'limit'
-                      ? 'Rests with Flash until price is reached. Gasless execution, cancel any time.'
+                      ? 'Rests with Flash until your price is reached. Gasless execution, cancel any time.'
                       : 'Executes at the best route Flash finds. Flash pays the execution gas.'}
                   </div>
                 )}
@@ -581,9 +694,7 @@ const TradeDrawer: React.FC = () => {
                   {STEP_ORDER.map((s, i) => (
                     <span
                       key={s.key}
-                      className={`step ${step === s.key ? 'on' : ''} ${
-                        step === 'filled' || (stepIndex > i && stepIndex >= 0) ? 'done' : ''
-                      }`}>
+                      className={`step ${step === s.key ? 'on' : ''} ${step === 'filled' || (stepIndex > i && stepIndex >= 0) ? 'done' : ''}`}>
                       {s.label}
                     </span>
                   ))}
@@ -592,32 +703,71 @@ const TradeDrawer: React.FC = () => {
 
               {error && <div className="flash-error">{error}</div>}
 
-              {(step === 'placed' || step === 'filled' || (step === 'failed' && orderId)) && (
-                <div className="flash-status">
-                  <div className="flash-status-title">
+              {step === 'filled' && (
+                <div className="flash-status ok">
+                  <div className="flash-status__big">
+                    <span className="check">✓</span>
+                    Filled {fmt(order?.filled?.targetAmount)} {symbol}
+                  </div>
+                  <div className="flash-status__kv">
+                    <span>Average price</span>
+                    <span>${fmt(order?.filled?.averageNotionalPrice || order?.filled?.averagePrice)}</span>
+                  </div>
+                  <div className="flash-status__kv">
+                    <span>Spent</span>
+                    <span>{fmt(order?.filled?.contraAmount || order?.qty, 4)} USDC</span>
+                  </div>
+                  {feePaid > 0 && (
+                    <div className="flash-status__kv">
+                      <span>Fees paid</span>
+                      <span>${fmt(feePaid, 4)}</span>
+                    </div>
+                  )}
+                  <div className="mono">
+                    {orderId}
+                    <button onClick={copyOrderId}>{copied ? 'Copied' : 'Copy'}</button>
+                  </div>
+                  <div className="flash-actions">
+                    {fillTx && explorer && (
+                      <a
+                        className="flash-link-btn"
+                        href={`${explorer}${fillTx}`}
+                        target="_blank"
+                        rel="noopener noreferrer">
+                        View onchain ↗
+                      </a>
+                    )}
+                    <a className="flash-link-btn x" href={shareUrl} target="_blank" rel="noopener noreferrer">
+                      Share on X
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {(step === 'placed' || (step === 'failed' && orderId)) && (
+                <div className={`flash-status ${step === 'failed' ? 'bad' : ''}`}>
+                  <div className="flash-status__top">
                     <span>Order</span>
-                    <span className={`pill ${step === 'filled' ? 'ok' : step === 'failed' ? 'bad' : ''}`}>
+                    <span className={`pill ${step === 'failed' ? 'bad' : 'wait'}`}>
                       {statusLabel(order?.status) || (step === 'placed' ? 'pending' : step)}
                     </span>
                   </div>
-                  <div className="mono">{orderId}</div>
+                  <div className="mono">
+                    {orderId}
+                    <button onClick={copyOrderId}>{copied ? 'Copied' : 'Copy'}</button>
+                  </div>
                   {pollTimedOut && step === 'placed' && (
-                    <div>Order is resting with Flash. Track or cancel it in the Orders tab.</div>
-                  )}
-                  {Number(order?.filled?.targetAmount) > 0 && (
-                    <div>
-                      Filled {fmt(order?.filled?.targetAmount)} {token.token_symbol} @ $
-                      {fmt(order?.filled?.averageNotionalPrice || order?.filled?.averagePrice)}
+                    <div className="hint">
+                      Resting with Flash until your price is reached. Track or cancel it in the Orders tab.
                     </div>
                   )}
-                  {fillTx && explorer && (
-                    <a href={`${explorer}${fillTx}`} target="_blank" rel="noopener noreferrer">
-                      View fill on explorer ↗
-                    </a>
-                  )}
-                  {!fillTx && txHash && explorer && (
-                    <a href={`${explorer}${txHash}`} target="_blank" rel="noopener noreferrer">
-                      View approval on explorer ↗
+                  {txHash && explorer && (
+                    <a
+                      className="flash-link-btn"
+                      href={`${explorer}${txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer">
+                      View approval onchain ↗
                     </a>
                   )}
                 </div>
@@ -625,26 +775,21 @@ const TradeDrawer: React.FC = () => {
 
               {step === 'placed' || step === 'filled' ? (
                 <>
-                  <button className="flash-primary" disabled>
+                  <button className={`flash-primary ${step === 'filled' ? 'ok' : ''}`} disabled>
+                    {step === 'placed' && !pollTimedOut && <Spinner />}
+                    {step === 'filled' ? '✓ ' : ''}
                     {primaryLabel}
                   </button>
-                  <button
-                    className="flash-secondary"
-                    onClick={() => {
-                      reset();
-                      setTxHash(null);
-                      setPollTimedOut(false);
-                    }}>
+                  <button className="flash-secondary" onClick={newOrder}>
                     New order
                   </button>
                 </>
               ) : (
                 <button
                   className="flash-primary"
-                  disabled={
-                    busy || !usdc || (!!address && !wrongNetwork && (!preview || !!previewError) && step !== 'failed')
-                  }
+                  disabled={busy || !canPlace}
                   onClick={() => (step === 'failed' ? (reset(), place()) : place())}>
+                  {busy && <Spinner />}
                   {primaryLabel}
                 </button>
               )}
@@ -654,41 +799,46 @@ const TradeDrawer: React.FC = () => {
           {tab === 'orders' && (
             <div className="flash-orders">
               {!address && <div className="empty">Connect a wallet to see its Flash orders.</div>}
-              {address && ordersLoading && <div className="empty">Loading…</div>}
-              {address && !ordersLoading && orders.length === 0 && (
-                <div className="empty">No Flash orders for this token from {shortAddress(address)}.</div>
+              {address && ordersLoading && orders.length === 0 && <div className="empty">Loading…</div>}
+              {address && !ordersLoading && orders.length === 0 && !ordersError && (
+                <div className="empty">
+                  No Flash orders for ${symbol} from {shortAddress(address)} yet.
+                  <br />
+                  Place one from the Trade tab.
+                </div>
               )}
-              {previewError && tab === 'orders' && <div className="flash-error">{previewError}</div>}
+              {ordersError && <div className="flash-error">{ordersError}</div>}
               {orders.map(o => {
                 const open = !TERMINAL_STATUSES.has(o.status);
+                const filled = o.status === 'ORDER_STATUS_FILLED';
                 return (
                   <div className="flash-order" key={o.orderId}>
                     <div className="top">
                       <span>
-                        {o.side} {o.orderType} · {fmt(o.qty)} {o.side === 'buy' ? 'USDC' : o.targetAsset?.ticker || ''}
+                        {o.side} {o.orderType} · {fmt(o.qty, 4)}{' '}
+                        {o.side === 'buy' ? 'USDC' : o.targetAsset?.ticker || ''}
                       </span>
-                      <span className={`pill ${o.status === 'ORDER_STATUS_FILLED' ? 'ok' : open ? '' : 'bad'}`}>
-                        {statusLabel(o.status)}
-                      </span>
+                      <span className={`pill ${filled ? 'ok' : open ? 'wait' : 'bad'}`}>{statusLabel(o.status)}</span>
                     </div>
                     <div className="meta">
-                      {o.limitNotionalPrice ? `limit $${fmt(o.limitNotionalPrice)} · ` : ''}
-                      {o.filled?.averageNotionalPrice ? `avg $${fmt(o.filled.averageNotionalPrice)} · ` : ''}
-                      {o.placedAt ? new Date(o.placedAt).toLocaleString() : ''}
+                      <span>
+                        {o.limitNotionalPrice ? `limit $${fmt(o.limitNotionalPrice)}` : ''}
+                        {o.limitNotionalPrice && o.filled?.averageNotionalPrice ? ' · ' : ''}
+                        {o.filled?.averageNotionalPrice ? `avg $${fmt(o.filled.averageNotionalPrice)}` : ''}
+                      </span>
+                      <span>{relTime(o.placedAt)}</span>
                     </div>
                     {open && (
-                      <div>
-                        <button className="cancel" disabled={cancelling === o.orderId} onClick={() => cancel(o)}>
-                          {cancelling === o.orderId ? 'Cancelling…' : 'Cancel'}
-                        </button>
-                      </div>
+                      <button className="cancel" disabled={cancelling === o.orderId} onClick={() => cancel(o)}>
+                        {cancelling === o.orderId ? 'Cancelling…' : 'Cancel order'}
+                      </button>
                     )}
                   </div>
                 );
               })}
               {address && (
                 <button className="flash-secondary" onClick={loadOrders} disabled={ordersLoading}>
-                  Refresh
+                  {ordersLoading ? 'Refreshing…' : 'Refresh'}
                 </button>
               )}
             </div>
@@ -699,7 +849,7 @@ const TradeDrawer: React.FC = () => {
             <a href="https://flash.definitive.fi/docs" target="_blank" rel="noopener noreferrer">
               Definitive Flash
             </a>
-            . Your tokens stay in your wallet until the order executes.
+            . Non-custodial: your tokens stay in your wallet until the order executes.
           </div>
         </div>
       </aside>

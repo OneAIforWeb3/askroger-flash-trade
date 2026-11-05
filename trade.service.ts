@@ -86,6 +86,8 @@ export interface FlashOrder {
 export interface FlashFill {
   status?: string;
   notional?: string;
+  feeNotional?: string;
+  integratorFeeNotional?: string;
   transactionId?: string;
   fillPrice?: string;
   filledAt?: string;
