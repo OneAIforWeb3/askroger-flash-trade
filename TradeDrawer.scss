@@ -1,0 +1,344 @@
+.flash-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1200;
+}
+
+.flash-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100dvh;
+  width: 400px;
+  max-width: 100vw;
+  background: var(--primary-bg-color-new);
+  color: var(--primary-text-color-new);
+  border-left: 1px solid var(--quaternary-bg-color-new);
+  z-index: 1201;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25);
+  font-size: var(--font-size-xl);
+
+  @media (max-width: 600px) {
+    width: 100vw;
+    border-left: none;
+  }
+
+  .flash-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    background: var(--secondary-bg-color-new);
+    border-bottom: 1px solid var(--quaternary-bg-color-new);
+
+    .flash-title {
+      font-size: var(--font-size-xxl);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .flash-sub {
+      color: var(--secondary-text-color-new);
+      font-size: var(--font-size-lg);
+      margin-top: 2px;
+    }
+    .flash-close {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      &:hover {
+        background: var(--quaternary-bg-color-new);
+      }
+    }
+  }
+
+  .flash-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 10px 16px 0;
+    button {
+      flex: 1;
+      background: var(--tertiary-bg-color-new);
+      color: var(--secondary-text-color-new);
+      border: 1px solid var(--quaternary-bg-color-new);
+      border-radius: 8px;
+      padding: 8px;
+      cursor: pointer;
+      font-weight: 500;
+      &.active {
+        background: var(--blue-bg-color-new);
+        color: var(--blue-text-color-new);
+        border-color: transparent;
+      }
+    }
+  }
+
+  .flash-body {
+    padding: 14px 16px 24px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .flash-wallet {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border: 1px solid var(--quaternary-bg-color-new);
+    border-radius: 8px;
+    background: var(--secondary-bg-color-new);
+    .flash-wallet-addr {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .flash-wallet-net {
+      color: var(--secondary-text-color-new);
+      font-size: var(--font-size-lg);
+      &.wrong {
+        color: var(--red-text-color-new);
+      }
+    }
+  }
+
+  .flash-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    label {
+      color: var(--secondary-text-color-new);
+      font-size: var(--font-size-lg);
+    }
+    .flash-input {
+      display: flex;
+      align-items: center;
+      border: 1px solid var(--quaternary-bg-color-new);
+      border-radius: 8px;
+      background: var(--secondary-bg-color-new);
+      padding: 0 12px;
+      input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: var(--primary-text-color-new);
+        font-size: var(--font-size-xxl);
+        padding: 10px 0;
+        min-width: 0;
+      }
+      .flash-unit {
+        color: var(--secondary-text-color-new);
+        font-weight: 500;
+      }
+    }
+    .flash-quick {
+      display: flex;
+      gap: 6px;
+      button {
+        background: var(--tertiary-bg-color-new);
+        border: 1px solid var(--quaternary-bg-color-new);
+        color: var(--secondary-text-color-new);
+        border-radius: 6px;
+        padding: 3px 8px;
+        cursor: pointer;
+        font-size: var(--font-size-lg);
+      }
+    }
+  }
+
+  .flash-summary {
+    border: 1px solid var(--quaternary-bg-color-new);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--secondary-text-color-new);
+      span:last-child {
+        color: var(--primary-text-color-new);
+        text-align: right;
+      }
+    }
+    .row.big span:last-child {
+      font-size: var(--font-size-xxl);
+      font-weight: 600;
+    }
+    .muted {
+      color: var(--secondary-text-color-new);
+      font-size: var(--font-size-lg);
+    }
+  }
+
+  .flash-primary {
+    width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    background: var(--blue-text-color-new);
+    color: #fff;
+    font-weight: 600;
+    font-size: var(--font-size-xxl);
+    cursor: pointer;
+    &:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+  }
+  .flash-secondary {
+    width: 100%;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--quaternary-bg-color-new);
+    background: transparent;
+    color: var(--primary-text-color-new);
+    cursor: pointer;
+  }
+
+  .flash-status {
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--secondary-bg-color-new);
+    border: 1px solid var(--quaternary-bg-color-new);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    .flash-status-title {
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+    }
+    .pill {
+      border-radius: 12px;
+      padding: 1px 8px;
+      font-size: var(--font-size-lg);
+      background: var(--blue-bg-color-new);
+      color: var(--blue-text-color-new);
+      &.ok {
+        background: var(--green-bg-color-new);
+        color: var(--green-text-color-new);
+      }
+      &.bad {
+        background: var(--red-bg-color-new);
+        color: var(--red-text-color-new);
+      }
+    }
+    a {
+      color: var(--blue-text-color-new);
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--font-size-lg);
+      word-break: break-all;
+    }
+  }
+
+  .flash-error {
+    color: var(--red-text-color-new);
+    background: var(--red-bg-color-new);
+    border-radius: 8px;
+    padding: 8px 12px;
+  }
+
+  .flash-steps {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    .step {
+      font-size: var(--font-size-lg);
+      color: var(--secondary-text-color-new);
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--quaternary-bg-color-new);
+      &.on {
+        color: var(--blue-text-color-new);
+        border-color: var(--blue-text-color-new);
+      }
+      &.done {
+        color: var(--green-text-color-new);
+        border-color: var(--green-text-color-new);
+      }
+    }
+  }
+
+  .flash-orders {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    .flash-order {
+      border: 1px solid var(--quaternary-bg-color-new);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      .top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+      .meta {
+        color: var(--secondary-text-color-new);
+        font-size: var(--font-size-lg);
+      }
+      .cancel {
+        background: transparent;
+        border: 1px solid var(--red-text-color-new);
+        color: var(--red-text-color-new);
+        border-radius: 6px;
+        padding: 2px 8px;
+        cursor: pointer;
+        &:disabled {
+          opacity: 0.5;
+        }
+      }
+    }
+    .empty {
+      color: var(--secondary-text-color-new);
+      text-align: center;
+      padding: 16px 0;
+    }
+  }
+
+  .flash-foot {
+    color: var(--secondary-text-color-new);
+    font-size: var(--font-size-lg);
+    text-align: center;
+    a {
+      color: var(--blue-text-color-new);
+    }
+  }
+}
+
+.flash-orders-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 16px 10px;
+  color: var(--secondary-text-color-new);
+  font-size: var(--font-size-lg);
+  .flash-share {
+    color: var(--blue-text-color-new);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+}
+
+.exchange-pill.flash-pill {
+  cursor: pointer;
+  padding: 4px 10px 4px 8px;
+  background: var(--green-bg-color-new);
+  color: var(--green-text-color-new);
+}
