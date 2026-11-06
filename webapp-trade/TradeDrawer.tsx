@@ -120,6 +120,9 @@ const TradeDrawer: React.FC = () => {
   const [amount, setAmount] = useState('5');
   const [limitPrice, setLimitPrice] = useState('');
   const [preview, setPreview] = useState<QuoteResponse | null>(null);
+  // Spot comes ONLY from a market quote. A limit quote's implied price is the limit price
+  // itself (Flash sizes the receive leg from it), which would make presets compound.
+  const [spotPrice, setSpotPrice] = useState<number | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [orders, setOrders] = useState<FlashOrder[]>([]);
@@ -178,6 +181,7 @@ const TradeDrawer: React.FC = () => {
     if (!isOpen) return;
     setTab('trade');
     setPreview(null);
+    setSpotPrice(null);
     setPreviewError(null);
     setTxHash(null);
     setPollTimedOut(false);
@@ -219,8 +223,8 @@ const TradeDrawer: React.FC = () => {
     if (isOpen) refreshBalance();
   }, [isOpen, refreshBalance, step]);
 
-  // Live preview quote (debounced). A limit without a price is previewed as market so we
-  // can prefill the limit price from the implied spot.
+  // Live preview (debounced). Always fetch a MARKET quote for the spot price; when a limit
+  // price is set, also fetch the LIMIT quote so "You receive" and fees reflect the order.
   useEffect(() => {
     if (!isOpen || !chain || !usdc) return;
     const amt = Number(amount);
@@ -229,22 +233,22 @@ const TradeDrawer: React.FC = () => {
       return;
     }
     const price = limitPrice.trim();
-    const type: OrderType = orderType === 'limit' && price ? 'limit' : 'market';
-    const req = baseRequest(address || PREVIEW_FUNDER, type, price);
-    if (!req) return;
+    const funder = address || PREVIEW_FUNDER;
+    const marketReq = baseRequest(funder, 'market', '');
+    const limitReq = orderType === 'limit' && price ? baseRequest(funder, 'limit', price) : null;
+    if (!marketReq) return;
     let cancelled = false;
     setPreviewLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const q = await postQuote(req);
+        const [marketQ, limitQ] = await Promise.all([postQuote(marketReq), limitReq ? postQuote(limitReq) : null]);
         if (cancelled) return;
-        setPreview(q);
+        const p = impliedPrice(marketQ);
+        if (p) setSpotPrice(p);
+        setPreview(limitQ || marketQ);
         setQuotedAt(Date.now());
         setPreviewError(null);
-        if (orderType === 'limit' && !limitTouched.current && !price) {
-          const p = impliedPrice(q);
-          if (p) setLimitPrice(priceAtPct(p, 0));
-        }
+        if (orderType === 'limit' && !limitTouched.current && !price && p) setLimitPrice(priceAtPct(p, 0));
       } catch (err) {
         if (!cancelled) {
           setPreview(null);
@@ -540,7 +544,7 @@ const TradeDrawer: React.FC = () => {
   const placedType = (order?.orderType || orderType) as string;
   const placedQty = order?.qty || amount;
   const placedLimit = order?.limitNotionalPrice || (orderType === 'limit' ? limitPrice : null);
-  const spot = impliedPrice(preview);
+  const spot = spotPrice;
   const canPlace =
     !!usdc && (!address || wrongNetwork || (!insufficient && (step === 'failed' || (!!preview && !previewError))));
   const shareMine = `I just traded $${symbol} on askRoger with @DefinitiveFi Flash. Trade the signal:`;
