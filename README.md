@@ -6,6 +6,8 @@ askRoger ranks tokens by what is happening on X: mentions, KOL activity, smart f
 
 Verified live on Base on 2026-11-05 (UTC): a market buy filled onchain, two limit orders rested below spot and were cancelled from the Orders tab, all mirrored in askRoger's order table.
 
+Supported chains (2026-11-11): Base, Ethereum, Arbitrum, Optimism, Polygon, Avalanche and BNB Chain. The contra asset is the native USDC on each chain as returned by Flash's `GET /search`, except BNB Chain where only Binance-Peg USDC (18 decimals) exists. Base is the chain exercised with real orders; the others are quote-verified.
+
 ## What existed before the hackathon
 
 - askRoger webapp (private repo): token leaderboard, token pages, signal alerts, watchlists, referral "Trade" links to GMGN, Photon, Uniswap, Banana Gun.
