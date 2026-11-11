@@ -4,7 +4,15 @@ import { Link } from 'react-router-dom';
 import CrossIcon from 'icons/CrossIcon';
 import { CHAIN_ICONS } from '@constants/constants';
 import { useTradeStore, TradeStep } from './useTradeStore';
-import { CHAIN_LABELS, EVM_CHAIN_IDS, EXPLORER_TX_BY_CHAIN, USDC_BY_CHAIN, normalizeChain } from './chains';
+import {
+  CHAIN_LABELS,
+  EVM_CHAIN_IDS,
+  EXPLORER_TX_BY_CHAIN,
+  GAS_SYMBOL_BY_CHAIN,
+  USDC_BY_CHAIN,
+  WALLET_CHAIN_PARAMS,
+  normalizeChain,
+} from './chains';
 import {
   connect,
   getChainId,
@@ -144,6 +152,8 @@ const TradeDrawer: React.FC = () => {
   const chain = normalizeChain(token?.chain);
   const wantedChainId = chain ? EVM_CHAIN_IDS[chain] : undefined;
   const usdc = chain ? USDC_BY_CHAIN[chain] : undefined;
+  const walletParams = chain ? WALLET_CHAIN_PARAMS[chain] : undefined;
+  const gasSymbol = (chain && GAS_SYMBOL_BY_CHAIN[chain]) || 'the native token';
   const chainLabel = chain ? CHAIN_LABELS[chain] || chain : '';
   const chainIcon = chain ? CHAIN_ICONS[chain] : undefined;
   const explorer = chain ? EXPLORER_TX_BY_CHAIN[chain] : undefined;
@@ -344,14 +354,14 @@ const TradeDrawer: React.FC = () => {
       setWallet(addr, id);
       if (wantedChainId && id !== wantedChainId) {
         setStep('switching');
-        await switchChain(wantedChainId);
+        await switchChain(wantedChainId, walletParams);
         setWallet(addr, wantedChainId);
       }
       return addr;
     }
     if (wrongNetwork && wantedChainId) {
       setStep('switching');
-      await switchChain(wantedChainId);
+      await switchChain(wantedChainId, walletParams);
       setWallet(addr, wantedChainId);
     }
     return addr;
@@ -517,7 +527,7 @@ const TradeDrawer: React.FC = () => {
       case 'quoting':
         return 'Getting quote…';
       case 'approving':
-        return 'Approve USDC in wallet…';
+        return `Approve USDC in wallet… (one-time, needs a little ${gasSymbol} for gas)`;
       case 'signing':
         return 'Sign order in wallet…';
       case 'submitting':
@@ -531,7 +541,7 @@ const TradeDrawer: React.FC = () => {
       default:
         return orderType === 'limit' ? 'Place limit order' : 'Place market order';
     }
-  }, [address, wrongNetwork, chainLabel, step, orderType, pollTimedOut, insufficient, busy]);
+  }, [address, wrongNetwork, chainLabel, gasSymbol, step, orderType, pollTimedOut, insufficient, busy]);
 
   if (!isOpen || !token) return null;
 
