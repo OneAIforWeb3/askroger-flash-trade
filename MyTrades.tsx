@@ -169,7 +169,8 @@ const MyTrades: React.FC = () => {
 
       {!loading && orders.length === 0 && !error && (
         <div className="my-trades-empty">
-          No Flash trades yet. Open any Base or Arbitrum token and press <strong>⚡ Trade with Flash</strong>.
+          No Flash trades yet. Open any token on Base, Ethereum, Arbitrum, Optimism, Polygon, Avalanche or BNB Chain and
+          press <strong>⚡ Trade with Flash</strong>.
         </div>
       )}
 

@@ -47,11 +47,90 @@ export const EVM_CHAIN_IDS: Partial<Record<FlashChain, number>> = {
   monad: 143,
 };
 
-/** Contra asset per chain. From the Flash docs (Base, Arbitrum); add others only after
- * verifying the address with GET /trade/search or a block explorer. */
+/** Contra asset per chain: the native (Circle) USDC that Flash's GET /search returns as
+ * plain "USDC" on each chain, re-checked with a live /quote on 2026-11-11. Bridged USDC.e
+ * variants are deliberately not used. BSC only has Binance-Peg USDC, which is 18 decimals. */
 export const USDC_BY_CHAIN: Partial<Record<FlashChain, { address: string; decimals: number }>> = {
   base: { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6 },
   arbitrum: { address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', decimals: 6 },
+  ethereum: { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6 },
+  optimism: { address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', decimals: 6 },
+  polygon: { address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', decimals: 6 },
+  avalanche: { address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', decimals: 6 },
+  bsc: { address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', decimals: 18 },
+};
+
+/** What wallet_addEthereumChain needs when the user's wallet has never seen the chain (EIP-3085).
+ * Public RPCs only; the wallet replaces them with its own once the chain is added. */
+export type AddChainParams = {
+  chainId: string;
+  chainName: string;
+  nativeCurrency: { name: string; symbol: string; decimals: number };
+  rpcUrls: string[];
+  blockExplorerUrls: string[];
+};
+const hex = (id: number) => `0x${id.toString(16)}`;
+export const WALLET_CHAIN_PARAMS: Partial<Record<FlashChain, AddChainParams>> = {
+  ethereum: {
+    chainId: hex(1),
+    chainName: 'Ethereum Mainnet',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://ethereum-rpc.publicnode.com'],
+    blockExplorerUrls: ['https://etherscan.io'],
+  },
+  base: {
+    chainId: hex(8453),
+    chainName: 'Base',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://mainnet.base.org'],
+    blockExplorerUrls: ['https://basescan.org'],
+  },
+  arbitrum: {
+    chainId: hex(42161),
+    chainName: 'Arbitrum One',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://arb1.arbitrum.io/rpc'],
+    blockExplorerUrls: ['https://arbiscan.io'],
+  },
+  optimism: {
+    chainId: hex(10),
+    chainName: 'OP Mainnet',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://mainnet.optimism.io'],
+    blockExplorerUrls: ['https://optimistic.etherscan.io'],
+  },
+  polygon: {
+    chainId: hex(137),
+    chainName: 'Polygon Mainnet',
+    nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+    rpcUrls: ['https://polygon-rpc.com'],
+    blockExplorerUrls: ['https://polygonscan.com'],
+  },
+  avalanche: {
+    chainId: hex(43114),
+    chainName: 'Avalanche C-Chain',
+    nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
+    rpcUrls: ['https://api.avax.network/ext/bc/C/rpc'],
+    blockExplorerUrls: ['https://snowtrace.io'],
+  },
+  bsc: {
+    chainId: hex(56),
+    chainName: 'BNB Smart Chain',
+    nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+    rpcUrls: ['https://bsc-dataseed.binance.org'],
+    blockExplorerUrls: ['https://bscscan.com'],
+  },
+};
+
+/** Native token the user needs for gas on each chain, for the drawer's hint copy. */
+export const GAS_SYMBOL_BY_CHAIN: Partial<Record<FlashChain, string>> = {
+  ethereum: 'ETH',
+  base: 'ETH',
+  arbitrum: 'ETH',
+  optimism: 'ETH',
+  polygon: 'POL',
+  avalanche: 'AVAX',
+  bsc: 'BNB',
 };
 
 export const EXPLORER_TX_BY_CHAIN: Partial<Record<FlashChain, string>> = {

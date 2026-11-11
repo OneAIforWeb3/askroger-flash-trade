@@ -51,19 +51,29 @@ export async function getChainId(): Promise<number> {
   return parseInt(hex, 16);
 }
 
-export async function switchChain(chainId: number): Promise<void> {
+/** MetaMask answers 4902 when the chain is not in the wallet; some wallets wrap it in -32603. */
+const isUnknownChain = (err: unknown): boolean => {
+  const e = err as { code?: number; data?: { originalError?: { code?: number }; code?: number } };
+  return e?.code === 4902 || e?.data?.originalError?.code === 4902 || e?.data?.code === 4902;
+};
+
+export async function switchChain(chainId: number, addParams?: object): Promise<void> {
   const provider = getProvider();
   if (!provider) throw new WalletError('No browser wallet found');
+  const hexId = `0x${chainId.toString(16)}`;
   try {
-    await provider.request({
-      method: 'wallet_switchEthereumChain',
-      params: [{ chainId: `0x${chainId.toString(16)}` }],
-    });
+    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hexId }] });
+    return;
   } catch (err) {
-    const e = err as { code?: number };
-    if (e?.code === 4902)
-      throw new WalletError(`Your wallet does not know chain ${chainId}. Add it in the wallet first.`);
-    throw rpcError(err, 'Could not switch network');
+    if (!isUnknownChain(err)) throw rpcError(err, 'Could not switch network');
+    if (!addParams) throw new WalletError(`Your wallet does not know chain ${chainId}. Add it in the wallet first.`);
+  }
+  // Chain missing from the wallet: offer to add it (EIP-3085), then switch again.
+  try {
+    await provider.request({ method: 'wallet_addEthereumChain', params: [addParams] });
+    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hexId }] });
+  } catch (err) {
+    throw rpcError(err, 'Could not add the network to your wallet');
   }
 }
 
